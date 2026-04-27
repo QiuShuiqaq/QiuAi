@@ -1,0 +1,16 @@
+node_modules/
+build/
+dist/
+.logs/
+
+DATA/log.txt
+DATA/message.txt
+DATA/dev-stdout.log
+DATA/dev-stderr.log
+DATA/taskmanager.json
+DATA/input/
+DATA/output/
+
+*.log
+*.tmp
+*.temp

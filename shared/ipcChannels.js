@@ -1,0 +1,23 @@
+module.exports = {
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SAVE: 'settings:save',
+  DRAW_CREATE_TASK: 'draw:create-task',
+  DRAW_GET_RESULT: 'draw:get-result',
+  DRAW_DOWNLOAD_IMAGE: 'draw:download-image',
+  INPUT_PICK_FOLDER: 'input:pick-folder',
+  INPUT_PICK_FILE: 'input:pick-file',
+  PROMPTS_LIST: 'prompts:list',
+  PROMPTS_SAVE: 'prompts:save',
+  PROMPTS_REMOVE: 'prompts:remove',
+  TASKS_CREATE_LOCAL: 'tasks:create-local',
+  TASKS_LIST: 'tasks:list',
+  TASKS_RUN: 'tasks:run',
+  TASKS_GET: 'tasks:get',
+  TASKS_EXPORT: 'tasks:export',
+  STUDIO_GET_SNAPSHOT: 'studio:get-snapshot',
+  STUDIO_SAVE_DRAFT: 'studio:save-draft',
+  STUDIO_CREATE_TASK: 'studio:create-task',
+  STUDIO_OPEN_OUTPUT_DIRECTORY: 'studio:open-output-directory',
+  STUDIO_EXPORT_RESULTS: 'studio:export-results',
+  STUDIO_DELETE_EXPORT_ITEM: 'studio:delete-export-item'
+}
