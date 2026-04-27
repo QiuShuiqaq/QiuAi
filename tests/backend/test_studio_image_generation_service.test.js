@@ -33,6 +33,9 @@ function createService(overrides = {}) {
     toDataUrlDependency: vi.fn(async ({ filePath }) => `data:image/png;base64,${Buffer.from(filePath, 'utf8').toString('base64')}`),
     getMimeTypeFromPathDependency: vi.fn(() => 'image/png'),
     wait: vi.fn(async () => undefined),
+    promptTemplateService: {
+      listTemplates: () => []
+    },
     ...overrides
   })
 }
@@ -110,6 +113,102 @@ describe('studioImageGenerationService', () => {
     expect(result.comparisonResults[0].title).toBe('nano-banana-fast 设计结果')
   })
 
+  it('rejects series-design drafts that do not provide a full set of image types for selected images', async () => {
+    const service = createService()
+
+    await expect(service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-missing-type',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 1,
+        size: '1:1',
+        imageAssignments: [
+          {
+            id: 'image-1',
+            name: 'look-1.png',
+            path: 'C:/input/look-1.png',
+            selected: true,
+            prompt: '突出产品主视觉效果',
+            imageType: '商品主图'
+          },
+          {
+            id: 'image-2',
+            name: 'look-2.png',
+            path: 'C:/input/look-2.png',
+            selected: true,
+            prompt: '加入尺寸标注信息',
+            imageType: ''
+          }
+        ]
+      }
+    })).rejects.toThrow('套图设计需要为每一张选中图片选择图片类型')
+  })
+
+  it('builds series-design batches from typed prompt assignments and keeps full-group outputs ordered', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-valid',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 2,
+        size: '1:1',
+        imageAssignments: [
+          {
+            id: 'image-1',
+            name: 'look-1.png',
+            path: 'C:/input/look-1.png',
+            selected: true,
+            prompt: '突出产品主视觉效果',
+            imageType: '商品主图'
+          },
+          {
+            id: 'image-2',
+            name: 'look-2.png',
+            path: 'C:/input/look-2.png',
+            selected: false,
+            prompt: '',
+            imageType: ''
+          },
+          {
+            id: 'image-3',
+            name: 'look-3.png',
+            path: 'C:/input/look-3.png',
+            selected: true,
+            prompt: '重点展示局部材质与纹理',
+            imageType: '细节图'
+          }
+        ]
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency.mock.calls.map((call) => call[0].prompt)).toEqual([
+      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品主视觉效果',
+      '统一高级电商视觉风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示局部材质与纹理',
+      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品主视觉效果',
+      '统一高级电商视觉风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示局部材质与纹理'
+    ])
+    expect(result.groupedResults).toHaveLength(2)
+    expect(result.groupedResults[0].outputs).toHaveLength(3)
+    expect(result.groupedResults[0].outputs[0].title).toBe('主图0')
+    expect(result.groupedResults[0].outputs[1].title).toBe('look-2.png')
+    expect(result.groupedResults[0].outputs[2].title).toBe('细节图0')
+    expect(result.summary.title).toBe('套图设计 2 组')
+  })
+
   it('rejects series-generate drafts that do not provide a full set of prompt assignments', async () => {
     const service = createService()
 
@@ -135,7 +234,32 @@ describe('studioImageGenerationService', () => {
     })).rejects.toThrow('套图生成需要为每一张图片填写单独提示词')
   })
 
-  it('builds series-generate batches from global prompt plus fixed per-image prompt assignments', async () => {
+  it('rejects series-generate drafts that do not provide a full set of image types', async () => {
+    const service = createService()
+
+    await expect(service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-missing-type',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一高级电商详情页风格',
+        generateCount: 2,
+        batchCount: 1,
+        promptAssignments: [
+          { index: 1, prompt: '突出产品整体外观', imageType: '商品主图' },
+          { index: 2, prompt: '强调尺寸标注信息', imageType: '' }
+        ],
+        size: '1:1'
+      }
+    })).rejects.toThrow('套图生成需要为每一张图片选择图片类型')
+  })
+
+  it('builds series-generate batches from typed prompt assignments and names outputs by type with counters', async () => {
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
       id: `remote-${createDrawTaskDependency.mock.calls.length}`,
       prompt
@@ -155,27 +279,74 @@ describe('studioImageGenerationService', () => {
           path: 'C:/input/main.png'
         },
         globalPrompt: '统一高级电商详情页风格',
-        generateCount: 2,
+        generateCount: 3,
         batchCount: 2,
         promptAssignments: [
-          { index: 1, prompt: '主图延展成场景图，突出产品整体外观' },
-          { index: 2, prompt: '生成卖点细节图，重点展示材质和纹理' }
+          { index: 1, prompt: '突出产品整体外观和电商氛围', imageType: '商品主图' },
+          { index: 2, prompt: '重点展示材质和纹理', imageType: '细节图' },
+          { index: 3, prompt: '提供另一个主视觉构图', imageType: '商品主图' }
         ],
         size: '1:1'
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(6)
     expect(createDrawTaskDependency.mock.calls.map((call) => call[0].prompt)).toEqual([
-      '统一高级电商详情页风格\n主图延展成场景图，突出产品整体外观',
-      '统一高级电商详情页风格\n生成卖点细节图，重点展示材质和纹理',
-      '统一高级电商详情页风格\n主图延展成场景图，突出产品整体外观',
-      '统一高级电商详情页风格\n生成卖点细节图，重点展示材质和纹理'
+      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围',
+      '统一高级电商详情页风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示材质和纹理',
+      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n提供另一个主视觉构图',
+      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围',
+      '统一高级电商详情页风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示材质和纹理',
+      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n提供另一个主视觉构图'
     ])
     expect(result.groupedResults).toHaveLength(2)
-    expect(result.groupedResults[0].outputs).toHaveLength(2)
-    expect(result.groupedResults[0].outputs[0].title).toBe('第 1 张')
-    expect(result.groupedResults[0].outputs[1].title).toBe('第 2 张')
-    expect(result.summary.title).toBe('套图生成 2 组 x 2 张')
+    expect(result.groupedResults[0].outputs).toHaveLength(3)
+    expect(result.groupedResults[0].outputs[0].title).toBe('主图0')
+    expect(result.groupedResults[0].outputs[1].title).toBe('细节图0')
+    expect(result.groupedResults[0].outputs[2].title).toBe('主图1')
+    expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
+  })
+
+  it('uses edited fixed prompt templates from the prompt library when composing image-type prompts', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency,
+      promptTemplateService: {
+        listTemplates: () => [
+          {
+            id: 'product-main',
+            name: '商品主图',
+            category: '按钮提示词',
+            prompt: '这里是用户改过的主图按钮提示词',
+            source: 'system-fixed'
+          }
+        ]
+      }
+    })
+
+    await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-custom-fixed-template',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一风格',
+        generateCount: 1,
+        batchCount: 1,
+        promptAssignments: [
+          { index: 1, prompt: '补充主体卖点', imageType: '商品主图' }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe('统一风格\n这里是用户改过的主图按钮提示词\n补充主体卖点')
   })
 })

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 describe('App source', () => {
-  it('renders fixed desktop shell with top bar and 1/8-6/8-1/8 layout', () => {
+  it('renders fixed desktop shell with theme switch, notice layer and draft reset flow', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
 
     expect(source).toContain('AppTopBar')
@@ -11,9 +11,6 @@ describe('App source', () => {
     expect(source).toContain('DesignWorkspace')
     expect(source).toContain('TaskManagerSidebar')
     expect(source).toContain('shell-grid')
-    expect(source).toContain('shell-grid__sidebar')
-    expect(source).toContain('shell-grid__workspace')
-    expect(source).toContain('shell-grid__tasks')
     expect(source).toContain('秋 Ai')
     expect(source).toContain('暗黑')
     expect(source).toContain('明亮')
@@ -29,40 +26,44 @@ describe('App source', () => {
     expect(source).toContain('resetActiveDraftAfterSubmit')
   })
 
-  it('uses six fixed sidebar menu items and comment placeholders for UI events', () => {
-    const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/WorkspaceSidebar.vue'), 'utf8')
+  it('uses prompt library sidebar item together with studio menus without copywriting', () => {
+    const sidebarSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/WorkspaceSidebar.vue'), 'utf8')
+    const appSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
 
-    expect(source).toContain('工作台')
-    expect(source).toContain('文案设计')
-    expect(source).toContain('单图测试')
-    expect(source).toContain('单图设计')
-    expect(source).toContain('套图设计')
-    expect(source).toContain('套图生成')
-    expect(source).toContain('模型价格')
-    expect(source).toContain("key: 'workspace'")
-    expect(source).toContain("key: 'copywriting'")
-    expect(source).toContain("key: 'single-image'")
-    expect(source).toContain("key: 'single-design'")
-    expect(source).toContain("key: 'series-design'")
-    expect(source).toContain("key: 'series-generate'")
-    expect(source).toContain("key: 'model-pricing'")
-    expect(source).toContain('菜单点击事件预留')
+    expect(sidebarSource).toContain('工作台')
+    expect(sidebarSource).toContain('单图测试')
+    expect(sidebarSource).toContain('单图设计')
+    expect(sidebarSource).toContain('套图设计')
+    expect(sidebarSource).toContain('套图生成')
+    expect(sidebarSource).toContain('模型价格')
+    expect(sidebarSource).toContain('提示词库')
+    expect(sidebarSource).not.toContain('文案设计')
+    expect(sidebarSource).toContain("key: 'workspace'")
+    expect(sidebarSource).toContain("key: 'single-image'")
+    expect(sidebarSource).toContain("key: 'single-design'")
+    expect(sidebarSource).toContain("key: 'series-design'")
+    expect(sidebarSource).toContain("key: 'series-generate'")
+    expect(sidebarSource).toContain("key: 'model-pricing'")
+    expect(sidebarSource).toContain("key: 'prompt-library'")
+    expect(sidebarSource).not.toContain("key: 'copywriting'")
+    expect(appSource).not.toContain("{ key: 'copywriting', label: '文案设计' }")
+    expect(appSource).toContain("{ key: 'prompt-library', label: '提示词库' }")
+    expect(sidebarSource).toContain('菜单点击事件预留')
   })
 
-  it('renders task sidebar with fixed categories and statuses', () => {
+  it('renders task sidebar with workspace queue and design export modes only', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/TaskManagerSidebar.vue'), 'utf8')
 
     expect(source).toContain('任务队列')
-    expect(source).toContain('文案设计')
     expect(source).toContain('单图测试')
     expect(source).toContain('单图设计')
     expect(source).toContain('套图设计')
     expect(source).toContain('套图生成')
+    expect(source).not.toContain('文案设计')
     expect(source).toContain('等待中')
     expect(source).toContain('进行中')
     expect(source).toContain('已完成')
     expect(source).toContain('失败')
-    expect(source).toContain('任务编号')
     expect(source).toContain('生成时间')
     expect(source).toContain('formatTaskNumber')
     expect(source).toContain('10 个任务')
@@ -72,14 +73,18 @@ describe('App source', () => {
     expect(source).toContain('ResultExportPanel')
     expect(source).toContain('showWorkspaceTasks')
     expect(source).toContain('showExportPanel')
+    expect(source).not.toContain("props.activeMenu === 'prompt-library'")
+    expect(source).not.toContain("props.activeMenu === 'copywriting'")
     expect(source).toContain('当前页面暂无侧边内容')
   })
 
-  it('renders dashboard workspace, single-block model pricing, and three-panel design pages', () => {
+  it('renders dashboard workspace, prompt library, single-block model pricing, and focus display design pages', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/DesignWorkspace.vue'), 'utf8')
 
     expect(source).toContain('WorkspaceDashboard')
     expect(source).toContain("activeMenu === 'workspace'")
+    expect(source).toContain('PromptLibraryPanel')
+    expect(source).toContain("activeMenu === 'prompt-library'")
     expect(source).toContain('ParameterSettingsPanel')
     expect(source).toContain('ResultDisplayPanel')
     expect(source).not.toContain('ResultExportPanel')
@@ -88,30 +93,54 @@ describe('App source', () => {
     expect(source).toContain('workspace-panels--focus-display')
     expect(source).toContain('single-design')
     expect(source).toContain('latestTask')
+    expect(source).not.toContain('select-copywriting-images')
+    expect(source).not.toContain('clear-copywriting-images')
   })
 
-  it('defines classified model pools for copywriting and image generation', () => {
+  it('defines image-generation model pools and omits copywriting-specific options', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
 
-    expect(source).toContain('const copywritingModelOptions = [')
-    expect(source).toContain('gemini-3-pro')
-    expect(source).toContain('gemini-3.1-pro')
+    expect(source).not.toContain('const copywritingModelOptions = [')
     expect(source).toContain('const imageModelOptions = [')
     expect(source).toContain('nano-banana-fast')
     expect(source).toContain('nano-banana-pro-4k-vip')
     expect(source).toContain('const currentModelOptions = computed(() => {')
-    expect(source).toContain("if (activeMenu.value === 'copywriting')")
+    expect(source).not.toContain("if (activeMenu.value === 'copywriting')")
     expect(source).toContain('currentModelOptions')
   })
 
-  it('wires copywriting image upload actions through the workspace shell', () => {
+  it('defines a recharge catalog for the model pricing page', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
+
+    expect(source).toContain('const rechargePricingCatalog = [')
+    expect(source).toContain("price: '30¥'")
+    expect(source).toContain("credits: '100000积分'")
+    expect(source).toContain("bonus: '送25%'")
+    expect(source).toContain("price: '3000¥'")
+    expect(source).toContain("credits: '20000000积分'")
+    expect(source).toContain(':recharge-pricing-catalog="rechargePricingCatalog"')
+  })
+
+  it('keeps only needed pricing models and orders them by ascending credits', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
+
+    expect(source).not.toContain("name: 'gemini-3-pro'")
+    expect(source).not.toContain("name: 'gemini-3.1-pro'")
+    expect(source).not.toContain("name: 'gemini-2.5-pro'")
+    expect(source).not.toContain("name: 'sora-create-character'")
+    expect(source).not.toContain("name: 'sora-upload-character'")
+
+    expect(source.indexOf("name: 'nano-banana-fast'")).toBeLessThan(source.indexOf("name: 'gpt-image-2'"))
+    expect(source.indexOf("name: 'gpt-image-2'")).toBeLessThan(source.indexOf("name: 'nano-banana-2'"))
+    expect(source.indexOf("name: 'nano-banana-2'")).toBeLessThan(source.indexOf("name: 'nano-banana'"))
+    expect(source.indexOf("name: 'nano-banana'")).toBeLessThan(source.indexOf("name: 'nano-banana-2-cl'"))
+    expect(source.indexOf("name: 'nano-banana-2-cl'")).toBeLessThan(source.indexOf("name: 'nano-banana-pro'"))
+  })
+
+  it('wires image upload actions through the workspace shell', () => {
     const appSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
     const workspaceSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/DesignWorkspace.vue'), 'utf8')
 
-    expect(workspaceSource).toContain('select-copywriting-images')
-    expect(workspaceSource).toContain('clear-copywriting-images')
-    expect(appSource).toContain('handleSelectCopywritingImages')
-    expect(appSource).toContain('handleClearCopywritingImages')
     expect(appSource).toContain('handleSelectSingleImage')
     expect(appSource).toContain('handleOpenSingleImagePicker')
     expect(workspaceSource).toContain('select-single-design-image')
@@ -121,11 +150,13 @@ describe('App source', () => {
     expect(appSource).toContain('handleOpenSeriesDesignPicker')
     expect(appSource).toContain('handleSelectSeriesGenerateImage')
     expect(appSource).toContain('handleOpenSeriesGeneratePicker')
-    expect(appSource).toContain('copyMode')
-    expect(appSource).toContain('referenceImages')
-    expect(appSource).not.toContain('handleImportCopywritingFile')
-    expect(appSource).not.toContain('handleOpenCopywritingImportPicker')
-    expect(appSource).not.toContain('copywritingImportInput')
+    expect(appSource).not.toContain('handleSelectCopywritingImages')
+    expect(appSource).not.toContain('handleClearCopywritingImages')
+    expect(workspaceSource).not.toContain('select-copywriting-images')
+    expect(workspaceSource).not.toContain('clear-copywriting-images')
+    expect(appSource).not.toContain('copyMode')
+    expect(appSource).not.toContain('referenceImages')
+    expect(appSource).not.toContain('copywritingImageInput')
   })
 
   it('wires export panel output-directory action through the desktop bridge', () => {
@@ -138,5 +169,13 @@ describe('App source', () => {
     expect(appSource).toContain('handleOpenOutputDirectory')
     expect(appSource).toContain('openOutputDirectory')
     expect(appSource).toContain('latestTaskForActiveMenu')
+  })
+
+  it('only shows latest task progress for the active menu instead of falling back to other modules', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
+
+    expect(source).toContain('const matchedTask = sortedTasks.value.find((task) => task.menuKey === activeMenu.value)')
+    expect(source).toContain('return matchedTask || null')
+    expect(source).not.toContain('return matchedTask || sortedTasks.value[0] || null')
   })
 })

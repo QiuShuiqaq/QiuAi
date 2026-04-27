@@ -2,12 +2,12 @@
 import WorkspaceDashboard from './WorkspaceDashboard.vue'
 import ParameterSettingsPanel from './ParameterSettingsPanel.vue'
 import ResultDisplayPanel from './ResultDisplayPanel.vue'
+import PromptLibraryPanel from './PromptLibraryPanel.vue'
 
 // 工作台主区标题：
-// 文案生成统计
 // 套图设计统计
 // 单图测试统计
-// 单图设计
+// 单图设计统计
 // 套图生成统计
 // 全局 API-Key 配置
 // 用户主机信息
@@ -45,6 +45,10 @@ defineProps({
     type: Array,
     required: true
   },
+  rechargePricingCatalog: {
+    type: Array,
+    required: true
+  },
   resultPayload: {
     type: Object,
     required: true
@@ -76,6 +80,14 @@ defineProps({
   isSavingApiConfig: {
     type: Boolean,
     required: true
+  },
+  fixedPromptTemplates: {
+    type: Array,
+    required: true
+  },
+  customPromptTemplates: {
+    type: Array,
+    required: true
   }
 })
 
@@ -84,8 +96,6 @@ const emit = defineEmits([
   'submit-task',
   'toggle-export-item',
   'batch-download',
-  'select-copywriting-images',
-  'clear-copywriting-images',
   'select-single-image',
   'select-single-design-image',
   'select-series-design-images',
@@ -93,7 +103,9 @@ const emit = defineEmits([
   'open-output-directory',
   'update-api-key',
   'switch-api-key',
-  'save-api-config'
+  'save-api-config',
+  'save-prompt-template',
+  'remove-prompt-template'
 ])
 </script>
 
@@ -102,8 +114,8 @@ const emit = defineEmits([
     :class="[
       'workspace-panels',
       {
-        'workspace-panels--single': activeMenu === 'workspace' || activeMenu === 'model-pricing',
-        'workspace-panels--focus-display': activeMenu !== 'workspace' && activeMenu !== 'model-pricing'
+        'workspace-panels--single': activeMenu === 'workspace' || activeMenu === 'model-pricing' || activeMenu === 'prompt-library',
+        'workspace-panels--focus-display': activeMenu !== 'workspace' && activeMenu !== 'model-pricing' && activeMenu !== 'prompt-library'
       }
     ]"
   >
@@ -128,7 +140,19 @@ const emit = defineEmits([
           :menu-label="menuLabel"
           :result-payload="resultPayload"
           :model-pricing-catalog="modelPricingCatalog"
+          :recharge-pricing-catalog="rechargePricingCatalog"
           :latest-task="latestTask"
+        />
+      </section>
+    </template>
+
+    <template v-else-if="activeMenu === 'prompt-library'">
+      <section class="workspace-panel">
+        <PromptLibraryPanel
+          :fixed-prompt-templates="fixedPromptTemplates"
+          :custom-prompt-templates="customPromptTemplates"
+          @save-template="emit('save-prompt-template', $event)"
+          @remove-template="emit('remove-prompt-template', $event)"
         />
       </section>
     </template>
@@ -143,10 +167,9 @@ const emit = defineEmits([
           :batch-options="batchOptions"
           :ratio-options="ratioOptions"
           :submit-button-state="submitButtonState"
+          :custom-prompt-templates="customPromptTemplates"
           @update-field="emit('update-field', $event)"
           @submit-task="emit('submit-task')"
-          @select-copywriting-images="emit('select-copywriting-images')"
-          @clear-copywriting-images="emit('clear-copywriting-images')"
           @select-single-image="emit('select-single-image')"
           @select-single-design-image="emit('select-single-design-image')"
           @select-series-design-images="emit('select-series-design-images')"
@@ -160,6 +183,7 @@ const emit = defineEmits([
           :menu-label="menuLabel"
           :result-payload="resultPayload"
           :model-pricing-catalog="modelPricingCatalog"
+          :recharge-pricing-catalog="rechargePricingCatalog"
           :latest-task="latestTask"
         />
       </section>

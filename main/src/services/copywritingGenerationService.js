@@ -2,6 +2,8 @@ const { createHttpClientService } = require('./httpClientService')
 const { createChatCompletion } = require('./chatCompletionService')
 const { toDataUrl, getMimeTypeFromPath } = require('./localInputAssetService')
 
+const COPYWRITING_TIMEOUT_MS = 120000
+
 function getReferenceImagePaths(draft = {}) {
   return Array.isArray(draft.referenceImages)
     ? draft.referenceImages
@@ -88,7 +90,8 @@ function createCopywritingGenerationService({
     const httpClient = createHttpClientServiceDependency({
       apiBaseUrl: settings.apiBaseUrl,
       apiKey,
-      messageRecorder
+      messageRecorder,
+      timeoutMs: COPYWRITING_TIMEOUT_MS
     })
     const referenceImageParts = draft.copyMode === 'image-reference'
       ? await createReferenceImageContentParts(draft, {

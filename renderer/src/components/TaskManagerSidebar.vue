@@ -35,7 +35,6 @@ const statusClassMap = {
 }
 
 // 固定任务分类占位：
-// 文案设计
 // 单图测试
 // 单图设计
 // 套图设计
@@ -64,8 +63,7 @@ const showWorkspaceTasks = computed(() => {
 })
 
 const showExportPanel = computed(() => {
-  return props.activeMenu === 'copywriting' ||
-    props.activeMenu === 'single-image' ||
+  return props.activeMenu === 'single-image' ||
     props.activeMenu === 'single-design' ||
     props.activeMenu === 'series-design' ||
     props.activeMenu === 'series-generate'

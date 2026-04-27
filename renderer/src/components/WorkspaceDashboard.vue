@@ -23,23 +23,23 @@ const props = defineProps({
 const emit = defineEmits(['update-api-key', 'switch-api-key', 'save-api-config'])
 
 // 固定工作台卡片标题：
-// 文案生成统计
 // 套图设计统计
 // 单图测试统计
+// 单图设计统计
 // 套图生成统计
 // 固定统计项示例：
 // 模型调用次数
 
 const leftColumnCards = computed(() => {
   return [
-    props.workspaceDashboard.copywritingStats,
+    props.workspaceDashboard.singleImageStats,
     props.workspaceDashboard.seriesDesignStats
   ]
 })
 
 const middleColumnCards = computed(() => {
   return [
-    props.workspaceDashboard.singleImageStats,
+    props.workspaceDashboard.singleDesignStats,
     props.workspaceDashboard.seriesGenerateStats
   ]
 })

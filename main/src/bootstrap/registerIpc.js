@@ -33,6 +33,7 @@ function registerIpc () {
   const studioWorkspaceService = createStudioWorkspaceService({
     store: studioStore,
     settingsService,
+    promptTemplateService,
     messageRecorder: dataTraceService,
     runtimeLogger: dataTraceService,
     taskManagerService: studioTaskManagerService

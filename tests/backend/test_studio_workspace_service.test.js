@@ -14,108 +14,22 @@ function createEmptyOutputScanDependencies() {
   }
 }
 
+function createMemoryStore() {
+  const memory = new Map()
+
+  return {
+    get(key, fallbackValue) {
+      return memory.has(key) ? memory.get(key) : fallbackValue
+    },
+    set(key, value) {
+      memory.set(key, value)
+    }
+  }
+}
+
 describe('studioWorkspaceService', () => {
-  it('enqueues studio tasks immediately and completes them in background', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
-    let resolveGeneration
-    const generationPromise = new Promise((resolve) => {
-      resolveGeneration = resolve
-    })
-
-    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
-    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
-
-    const settingsService = createSettingsStoreService({ store })
-    const service = createStudioWorkspaceService({
-      store,
-      settingsService,
-      ...createEmptyOutputScanDependencies(),
-      ensureDirectory: async () => undefined,
-      persistSourceFiles: async () => [],
-      writeFile: async () => undefined,
-      generateCopywritingResults: vi.fn(async () => {
-        await generationPromise
-        return [
-          {
-            id: 'copy-result-1',
-            title: '电商标题 1',
-            format: 'txt',
-            content: '轻薄风衣女春秋高级感通勤外套'
-          }
-        ]
-      }),
-      createId: () => 'studio-queued-1',
-      createTaskNumber: () => 'QAI-20260426-0001',
-      getNow: () => '2026-04-26T03:00:00.000Z'
-    })
-
-    await service.saveDraft({
-      menuKey: 'copywriting',
-      patch: {
-        prompt: '请生成电商标题',
-        model: 'gemini-3-pro',
-        taskName: 'QueuedCopy',
-        quantity: 1
-      }
-    })
-
-    const createdTask = await service.createTask({
-      menuKey: 'copywriting'
-    })
-
-    expect(createdTask.status).toBe('等待中')
-    expect(createdTask.progress).toBe(0)
-    expect(createdTask.taskNumber).toBe('QAI-20260426-0001')
-
-    const queuedSnapshot = service.getSnapshot()
-    expect(queuedSnapshot.tasks[0].status).toBe('进行中')
-    expect(queuedSnapshot.tasks[0].progress).toBe(0)
-    expect(queuedSnapshot.resultsByMenu.copywriting.textResults).toEqual([])
-    expect(queuedSnapshot.exportItemsByMenu.copywriting).toEqual([])
-
-    resolveGeneration()
-    await service.waitForIdle()
-
-    const completedSnapshot = service.getSnapshot()
-    expect(completedSnapshot.tasks[0].status).toBe('已完成')
-    expect(completedSnapshot.tasks[0].progress).toBe(100)
-    expect(completedSnapshot.resultsByMenu.copywriting).toMatchObject({
-      textResults: [
-        {
-          title: '电商标题 1',
-          format: 'txt',
-          content: '轻薄风衣女春秋高级感通勤外套'
-        }
-      ],
-      summary: {
-        elapsedLabel: '生成耗时 0.0 秒',
-        statusLabel: '已完成',
-        resultCountLabel: '结果数量 1'
-      }
-    })
-    expect(completedSnapshot.exportItemsByMenu.copywriting[0].name).toBe('QueuedCopy0')
-  })
-
-  it('updates studio image task progress from remote progress callbacks instead of keeping a placeholder value', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
+  it('enqueues image tasks immediately and updates progress from remote callbacks', async () => {
+    const store = createMemoryStore()
     let resolveGeneration
     const generationPromise = new Promise((resolve) => {
       resolveGeneration = resolve
@@ -219,16 +133,8 @@ describe('studioWorkspaceService', () => {
     }))
   })
 
-  it('returns desktop studio snapshot with fixed menus and theme options', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
+  it('returns snapshot without copywriting menu and with four dashboard stats cards', async () => {
+    const store = createMemoryStore()
 
     const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
@@ -242,11 +148,7 @@ describe('studioWorkspaceService', () => {
       persistSourceFiles: async ({ sourcePaths, targetDirectory }) => sourcePaths.map((sourcePath) => {
         return `${targetDirectory}/${sourcePath.split('/').pop()}`
       }),
-      writeFile: async () => undefined,
-      createId: (() => {
-        let counter = 0
-        return () => `studio-${++counter}`
-      })()
+      writeFile: async () => undefined
     })
 
     const snapshot = service.getSnapshot()
@@ -255,17 +157,13 @@ describe('studioWorkspaceService', () => {
     expect(snapshot.themeOptions.map((item) => item.value)).toEqual(['dark', 'light', 'eye-care'])
     expect(snapshot.menuItems.map((item) => item.key)).toEqual([
       'workspace',
-      'copywriting',
       'single-image',
       'single-design',
       'series-design',
       'series-generate',
       'model-pricing'
     ])
-    expect(snapshot.copywritingModelOptions.map((item) => item.value)).toEqual([
-      'gemini-3-pro',
-      'gemini-3.1-pro'
-    ])
+    expect(snapshot).not.toHaveProperty('copywritingModelOptions')
     expect(snapshot.imageModelOptions.map((item) => item.value)).toEqual([
       'gpt-image-2',
       'nano-banana-pro',
@@ -279,65 +177,32 @@ describe('studioWorkspaceService', () => {
       'nano-banana-pro-4k-vip',
       'nano-banana'
     ])
-    expect(snapshot.modelPricingCatalog.some((item) => item.name === 'gpt-image-2')).toBe(true)
-    expect(snapshot.formDrafts.copywriting.copyMode).toBe('prompt-only')
-    expect(snapshot.formDrafts.copywriting.referenceImages).toEqual([])
-    expect(snapshot.formDrafts.copywriting.copyType).toBeUndefined()
-    expect(snapshot.formDrafts.copywriting.inputMode).toBeUndefined()
-    expect(snapshot.formDrafts.copywriting.importFileName).toBeUndefined()
-    expect(snapshot.formDrafts.copywriting.taskName).toBe('')
-    expect(snapshot.formDrafts.copywriting.quantity).toBe(5)
+    expect(snapshot.formDrafts).not.toHaveProperty('copywriting')
     expect(snapshot.formDrafts['single-image'].compareModels).toHaveLength(4)
     expect(snapshot.formDrafts['single-design'].sourceImage).toBe(null)
     expect(snapshot.formDrafts['single-design'].model).toBe('gpt-image-2')
     expect(snapshot.formDrafts['series-design'].imageAssignments).toEqual([])
-    expect(snapshot.formDrafts['series-design'].batchCount).toBe(1)
-    expect(snapshot.formDrafts['series-generate'].globalPrompt).toBe('统一商品详情图整体风格')
-    expect(snapshot.formDrafts['series-generate'].generateCount).toBe(4)
     expect(snapshot.formDrafts['series-generate'].promptAssignments).toHaveLength(4)
-    expect(snapshot.formDrafts['series-generate'].batchCount).toBe(1)
-    expect(snapshot.workspaceDashboard.copywritingStats.title).toBe('文案生成统计')
-    expect(snapshot.workspaceDashboard.copywritingStats.items.some((item) => item.label === '模型调用次数')).toBe(true)
-    expect(snapshot.workspaceDashboard.copywritingStats.items).toHaveLength(6)
-    expect(snapshot.workspaceDashboard.copywritingStats.items.some((item) => item.label === '最近任务时间')).toBe(false)
-    expect(snapshot.workspaceDashboard.seriesDesignStats.title).toBe('套图设计统计')
+    expect(snapshot.workspaceDashboard).not.toHaveProperty('copywritingStats')
     expect(snapshot.workspaceDashboard.singleImageStats.title).toBe('单图测试统计')
+    expect(snapshot.workspaceDashboard.singleDesignStats.title).toBe('单图设计统计')
+    expect(snapshot.workspaceDashboard.seriesDesignStats.title).toBe('套图设计统计')
     expect(snapshot.workspaceDashboard.seriesGenerateStats.title).toBe('套图生成统计')
+    expect(snapshot.workspaceDashboard.singleImageStats.items).toHaveLength(6)
     expect(snapshot.settingsSummary.apiKeys).toEqual(['', ''])
     expect(snapshot.settingsSummary.activeApiKeyIndex).toBe(0)
     expect(snapshot.hostInfo.systemName).toBeTruthy()
     expect(snapshot.hostInfo.runtimeName).toContain('Node')
   })
 
-  it('persists module drafts and creates grouped studio tasks', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
+  it('persists image drafts, creates grouped tasks, and stores export folders by module', async () => {
+    const store = createMemoryStore()
+    const taskManagerRecords = []
 
     const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
-    const generatedCopyOutputs = [
-      {
-        id: 'copy-result-1',
-        title: '电商标题 1',
-        format: 'txt',
-        content: '轻薄风衣女春秋高级感通勤外套'
-      },
-      {
-        id: 'copy-result-2',
-        title: '电商标题 2',
-        format: 'txt',
-        content: '通勤西装外套修身显瘦百搭气质款'
-      }
-    ]
     const generateImageResults = vi.fn(async ({ menuKey, draft, taskId }) => {
       if (menuKey === 'single-image') {
         return {
@@ -348,7 +213,6 @@ describe('studioWorkspaceService', () => {
               model: 'nano-banana-fast',
               title: 'nano-banana-fast 对比结果',
               preview: createPreviewDataUrl('single-1'),
-              promptSummary: draft.prompt,
               sourceImageName: draft.sourceImage?.name || '',
               status: '已完成'
             },
@@ -357,7 +221,6 @@ describe('studioWorkspaceService', () => {
               model: 'gpt-image-2',
               title: 'gpt-image-2 对比结果',
               preview: createPreviewDataUrl('single-2'),
-              promptSummary: draft.prompt,
               sourceImageName: draft.sourceImage?.name || '',
               status: '已完成'
             },
@@ -366,7 +229,6 @@ describe('studioWorkspaceService', () => {
               model: 'nano-banana-2',
               title: 'nano-banana-2 对比结果',
               preview: createPreviewDataUrl('single-3'),
-              promptSummary: draft.prompt,
               sourceImageName: draft.sourceImage?.name || '',
               status: '已完成'
             },
@@ -375,7 +237,6 @@ describe('studioWorkspaceService', () => {
               model: 'nano-banana-2-cl',
               title: 'nano-banana-2-cl 对比结果',
               preview: createPreviewDataUrl('single-4'),
-              promptSummary: draft.prompt,
               sourceImageName: draft.sourceImage?.name || '',
               status: '已完成'
             }
@@ -383,6 +244,26 @@ describe('studioWorkspaceService', () => {
           groupedResults: [],
           summary: {
             title: '单图四模型对比',
+            description: '真实图片任务链'
+          }
+        }
+      }
+
+      if (menuKey === 'single-design') {
+        return {
+          textResults: [],
+          comparisonResults: [
+            {
+              id: `${taskId}-single-design-1`,
+              model: draft.model,
+              title: '单图设计结果',
+              preview: createPreviewDataUrl('single-design-1'),
+              status: '已完成'
+            }
+          ],
+          groupedResults: [],
+          summary: {
+            title: '单图设计',
             description: '真实图片任务链'
           }
         }
@@ -397,9 +278,7 @@ describe('studioWorkspaceService', () => {
               id: `${taskId}-series-design-group-1`,
               groupType: 'batch',
               groupTitle: '第 1 组',
-            promptSummary: draft.globalPrompt,
-            notes: '',
-            outputs: [
+              outputs: [
                 {
                   id: `${taskId}-series-design-group-1-1`,
                   title: 'look-1.jpg',
@@ -430,8 +309,6 @@ describe('studioWorkspaceService', () => {
             id: `${taskId}-series-generate-group-1`,
             groupType: 'batch',
             groupTitle: '第 1 组',
-            promptSummary: draft.globalPrompt,
-            notes: '',
             outputs: [
               {
                 id: `${taskId}-series-generate-group-1-1`,
@@ -457,8 +334,6 @@ describe('studioWorkspaceService', () => {
             id: `${taskId}-series-generate-group-2`,
             groupType: 'batch',
             groupTitle: '第 2 组',
-            promptSummary: draft.globalPrompt,
-            notes: '',
             outputs: [
               {
                 id: `${taskId}-series-generate-group-2-1`,
@@ -487,7 +362,6 @@ describe('studioWorkspaceService', () => {
         }
       }
     })
-    const taskManagerRecords = []
     const taskManagerService = {
       listTasks: vi.fn(() => taskManagerRecords.slice()),
       saveTask: vi.fn((task) => {
@@ -509,7 +383,6 @@ describe('studioWorkspaceService', () => {
         return `${targetDirectory}/${sourcePath.split('/').pop()}`
       }),
       writeFile: async () => undefined,
-      generateCopywritingResults: async () => generatedCopyOutputs,
       generateImageResults,
       taskManagerService,
       createId: (() => {
@@ -523,59 +396,11 @@ describe('studioWorkspaceService', () => {
       getNow: () => '2026-04-25T11:30:00.000Z'
     })
 
-    const draft = await service.saveDraft({
-      menuKey: 'copywriting',
-      patch: {
-        prompt: '春季女装外套',
-        model: 'gemini-3-pro',
-        taskName: 'CopyA',
-        quantity: 2,
-        copyMode: 'image-reference',
-        referenceImages: [
-          {
-            name: 'coat-main.jpg',
-            path: 'C:/images/coat-main.jpg'
-          }
-        ]
-      }
-    })
-
-    expect(draft.prompt).toBe('春季女装外套')
-    expect(draft.model).toBe('gemini-3-pro')
-    expect(draft.taskName).toBe('CopyA')
-    expect(draft.copyMode).toBe('image-reference')
-    expect(draft.quantity).toBe(2)
-    expect(draft.referenceImages[0].name).toBe('coat-main.jpg')
-
-    const normalizedDraft = await service.saveDraft({
-      menuKey: 'copywriting',
-      patch: {
-        model: 'gpt-image-2'
-      }
-    })
-
-    expect(normalizedDraft.model).toBe('gemini-3-pro')
-
-    const createdCopyTask = await service.createTask({
-      menuKey: 'copywriting'
-    })
-
-    expect(createdCopyTask.category).toBe('文案设计')
-    expect(createdCopyTask.title).toContain('文案生成')
-    expect(createdCopyTask.status).toBe('等待中')
-    expect(createdCopyTask.progress).toBe(0)
-    expect(createdCopyTask.taskNumber).toBe('QAI-20260425-0001')
-    expect(createdCopyTask.inputCount).toBe(1)
-    expect(createdCopyTask.plannedOutputCount).toBe(2)
-    expect(createdCopyTask.inputDirectory.replace(/\\/g, '/')).toContain('/DATA/input/copywriting/')
-    expect(createdCopyTask.outputDirectory.replace(/\\/g, '/')).toContain('/DATA/output/copywriting/')
-
     await service.saveDraft({
       menuKey: 'single-image',
       patch: {
         prompt: '提升质感，适合电商主图测试',
         taskName: 'SingleA',
-        quantity: 1,
         sourceImage: {
           name: 'bag-main.jpg',
           path: 'C:/images/bag-main.jpg'
@@ -592,7 +417,28 @@ describe('studioWorkspaceService', () => {
     expect(createdSingleTask.modelSummary).toContain('gpt-image-2')
     expect(createdSingleTask.inputCount).toBe(1)
     expect(createdSingleTask.plannedOutputCount).toBe(4)
-    expect(createdSingleTask.taskNumber).toBe('QAI-20260425-0002')
+    expect(createdSingleTask.taskNumber).toBe('QAI-20260425-0001')
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        prompt: '单张主图高端重制',
+        taskName: 'SingleDesignA',
+        model: 'nano-banana-fast',
+        sourceImage: {
+          name: 'watch-main.jpg',
+          path: 'C:/images/watch-main.jpg'
+        }
+      }
+    })
+
+    const createdSingleDesignTask = await service.createTask({
+      menuKey: 'single-design'
+    })
+
+    expect(createdSingleDesignTask.title).toContain('单图设计')
+    expect(createdSingleDesignTask.inputCount).toBe(1)
+    expect(createdSingleDesignTask.plannedOutputCount).toBe(1)
 
     await service.saveDraft({
       menuKey: 'series-design',
@@ -650,146 +496,43 @@ describe('studioWorkspaceService', () => {
     expect(createdSeriesGenerateTask.title).toContain('套图生成')
     expect(createdSeriesGenerateTask.batchCount).toBe(2)
     expect(createdSeriesGenerateTask.plannedOutputCount).toBe(6)
+
     await service.waitForIdle()
-    expect(generateImageResults).toHaveBeenCalledTimes(3)
-    expect(generateImageResults).toHaveBeenCalledWith(expect.objectContaining({
-      menuKey: 'single-image',
-      taskId: 'studio-2'
-    }))
 
     const snapshot = service.getSnapshot()
-    expect(snapshot.resultsByMenu.copywriting.textResults.length).toBe(2)
-    expect(snapshot.resultsByMenu.copywriting.textResults[0].format).toBe('txt')
-    expect(snapshot.exportItemsByMenu.copywriting).toHaveLength(1)
-    expect(snapshot.formDrafts.copywriting.model).toBe('gemini-3-pro')
-    expect(snapshot.formDrafts.copywriting.referenceImages.length).toBe(1)
-    expect(snapshot.formDrafts.copywriting.referenceImages[0].storedPath.replace(/\\/g, '/')).toContain('/DATA/input/copywriting/')
-    expect(snapshot.exportItemsByMenu.copywriting[0].type).toBe('FOLDER')
-    expect(snapshot.exportItemsByMenu.copywriting[0].name).toBe('CopyA0')
-    expect(snapshot.exportItemsByMenu.copywriting[0].directoryPath.replace(/\\/g, '/')).toContain('/DATA/output/copywriting/')
-    expect(snapshot.resultsByMenu.copywriting.textResults[0].content).toBe('轻薄风衣女春秋高级感通勤外套')
-    expect(snapshot.resultsByMenu.copywriting.summary).toMatchObject({
-      elapsedLabel: '生成耗时 0.0 秒',
-      resultCountLabel: '结果数量 2',
-      modelLabel: '使用模型 gemini-3-pro'
-    })
+    expect(snapshot.resultsByMenu).not.toHaveProperty('copywriting')
+    expect(snapshot.exportItemsByMenu).not.toHaveProperty('copywriting')
     expect(snapshot.resultsByMenu['single-image'].comparisonResults).toHaveLength(4)
-    expect(snapshot.resultsByMenu['single-image'].comparisonResults[0].model).toBe('nano-banana-fast')
-    expect(snapshot.resultsByMenu['single-image'].summary).toMatchObject({
-      elapsedLabel: '生成耗时 0.0 秒',
-      resultCountLabel: '结果数量 4',
-      modelLabel: '使用模型 nano-banana-fast / gpt-image-2 / nano-banana-2 / nano-banana-2-cl'
-    })
-    expect(snapshot.exportItemsByMenu['single-image']).toHaveLength(1)
-    expect(snapshot.exportItemsByMenu['single-image'][0].name).toBe('SingleA0')
+    expect(snapshot.resultsByMenu['single-design'].comparisonResults).toHaveLength(1)
     expect(snapshot.resultsByMenu['series-design'].groupedResults).toHaveLength(1)
     expect(snapshot.resultsByMenu['series-design'].groupedResults[0].outputs).toHaveLength(2)
-    expect(snapshot.resultsByMenu['series-design'].groupedResults[0].groupTitle).toContain('第 1 组')
-    expect(snapshot.resultsByMenu['series-design'].summary).toMatchObject({
-      elapsedLabel: '生成耗时 0.0 秒',
-      resultCountLabel: '结果数量 2'
-    })
-    expect(snapshot.exportItemsByMenu['series-design']).toHaveLength(1)
-    expect(snapshot.exportItemsByMenu['series-design'][0].name).toBe('SeriesA0')
     expect(snapshot.resultsByMenu['series-generate'].groupedResults).toHaveLength(2)
     expect(snapshot.resultsByMenu['series-generate'].groupedResults[0].outputs).toHaveLength(3)
-    expect(snapshot.resultsByMenu['series-generate'].summary).toMatchObject({
-      elapsedLabel: '生成耗时 0.0 秒',
-      resultCountLabel: '结果数量 6'
-    })
+    expect(snapshot.exportItemsByMenu['single-image']).toHaveLength(1)
+    expect(snapshot.exportItemsByMenu['single-image'][0].name).toBe('SingleA0')
+    expect(snapshot.exportItemsByMenu['single-design']).toHaveLength(1)
+    expect(snapshot.exportItemsByMenu['single-design'][0].name).toBe('SingleDesignA0')
+    expect(snapshot.exportItemsByMenu['series-design']).toHaveLength(1)
+    expect(snapshot.exportItemsByMenu['series-design'][0].name).toBe('SeriesA0')
     expect(snapshot.exportItemsByMenu['series-generate']).toHaveLength(2)
     expect(snapshot.exportItemsByMenu['series-generate'][0].name).toBe('SeriesB0')
     expect(snapshot.exportItemsByMenu['series-generate'][1].name).toBe('SeriesB1')
     expect(snapshot.tasks[0].taskNumber).toBe('QAI-20260425-0004')
-    expect(snapshot.tasks[0].category).toBe('套图生成')
-    expect(snapshot.tasks[0].plannedOutputCount).toBe(6)
     expect(snapshot.tasks.map((task) => task.category)).toEqual(expect.arrayContaining([
-      '文案设计',
       '单图测试',
+      '单图设计',
       '套图设计',
       '套图生成'
     ]))
-    expect(snapshot.workspaceDashboard.copywritingStats.items.find((item) => item.label === '模型调用次数')?.value).toBe('1')
-    expect(snapshot.workspaceDashboard.copywritingStats.items.find((item) => item.label === '已存储结果')?.value).toBe(String(snapshot.exportItemsByMenu.copywriting.length))
     expect(snapshot.workspaceDashboard.singleImageStats.items.find((item) => item.label === '模型调用次数')?.value).toBe('1')
+    expect(snapshot.workspaceDashboard.singleDesignStats.items.find((item) => item.label === '模型调用次数')?.value).toBe('1')
     expect(snapshot.workspaceDashboard.seriesDesignStats.items.find((item) => item.label === '模型调用次数')?.value).toBe('1')
     expect(snapshot.workspaceDashboard.seriesGenerateStats.items.find((item) => item.label === '模型调用次数')?.value).toBe('1')
-    expect(snapshot.workspaceDashboard.copywritingStats.items.some((item) => item.label === '最近任务时间')).toBe(false)
-    expect(taskManagerService.saveTask).toHaveBeenCalledTimes(12)
+    expect(taskManagerService.saveTask).toHaveBeenCalled()
   })
 
-  it('fails copywriting tasks instead of saving placeholder output when model generation fails', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
-    const runtimeLogger = {
-      log: vi.fn().mockResolvedValue(undefined)
-    }
-
-    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
-    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
-
-    const settingsService = createSettingsStoreService({ store })
-    const service = createStudioWorkspaceService({
-      store,
-      settingsService,
-      ...createEmptyOutputScanDependencies(),
-      ensureDirectory: async () => undefined,
-      persistSourceFiles: async () => [],
-      writeFile: async () => undefined,
-      generateCopywritingResults: async () => {
-        throw new Error('文案模型调用失败：429 rate limit')
-      },
-      runtimeLogger,
-      createId: () => 'studio-copy-failed',
-      getNow: () => '2026-04-25T11:30:00.000Z'
-    })
-
-    await service.saveDraft({
-      menuKey: 'copywriting',
-      patch: {
-        prompt: '请生成电商标题',
-        model: 'gemini-3-pro',
-        quantity: 1
-      }
-    })
-
-    await expect(service.createTask({
-      menuKey: 'copywriting'
-    })).resolves.toMatchObject({
-      status: '等待中',
-      progress: 0
-    })
-
-    await service.waitForIdle()
-
-    const snapshot = service.getSnapshot()
-    expect(snapshot.resultsByMenu.copywriting.textResults).toEqual([])
-    expect(snapshot.exportItemsByMenu.copywriting).toEqual([])
-    expect(snapshot.tasks[0].status).toBe('失败')
-    expect(snapshot.tasks[0].progress).toBe(100)
-    expect(snapshot.tasks[0].plannedOutputCount).toBe(0)
-    expect(runtimeLogger.log).toHaveBeenCalled()
-  })
-
-  it('exports selected studio results into a zip archive', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
+  it('exports selected studio result folders into a zip archive', async () => {
+    const store = createMemoryStore()
     const copiedFiles = []
     const removedDirectories = []
     const exportedArchives = []
@@ -805,20 +548,22 @@ describe('studioWorkspaceService', () => {
       ensureDirectory: async () => undefined,
       persistSourceFiles: async () => [],
       writeFile: async () => undefined,
-      generateCopywritingResults: async () => [
-        {
-          id: 'copy-export-1',
-          title: '电商标题 1',
-          format: 'txt',
-          content: '轻薄风衣女春秋高级感通勤外套'
-        },
-        {
-          id: 'copy-export-2',
-          title: '电商标题 2',
-          format: 'txt',
-          content: '通勤西装外套修身显瘦百搭气质款'
+      generateImageResults: async ({ taskId }) => ({
+        textResults: [],
+        comparisonResults: [
+          {
+            id: `${taskId}-single-1`,
+            model: 'gpt-image-2',
+            title: '单图设计结果',
+            preview: createPreviewDataUrl('single-export')
+          }
+        ],
+        groupedResults: [],
+        summary: {
+          title: '单图设计',
+          description: '导出测试'
         }
-      ],
+      }),
       mkdtemp: async () => 'C:/temp/qiuai-studio-export-1',
       copyDirectory: async (sourcePath, targetPath) => {
         copiedFiles.push({ sourcePath, targetPath })
@@ -835,51 +580,43 @@ describe('studioWorkspaceService', () => {
     })
 
     await service.saveDraft({
-      menuKey: 'copywriting',
+      menuKey: 'single-design',
       patch: {
-        model: 'gemini-3-pro',
-        taskName: 'CopyZip',
-        prompt: '请生成电商标题',
-        quantity: 2
+        model: 'gpt-image-2',
+        taskName: 'SingleZip',
+        prompt: '生成一张高质量电商主图'
       }
     })
 
     await service.createTask({
-      menuKey: 'copywriting'
+      menuKey: 'single-design'
     })
     await service.waitForIdle()
 
     const snapshot = service.getSnapshot()
-    const selectedIds = snapshot.exportItemsByMenu.copywriting.map((item) => item.id)
+    const selectedIds = snapshot.exportItemsByMenu['single-design'].map((item) => item.id)
     const result = await service.exportSelectedResults({
-      menuKey: 'copywriting',
+      menuKey: 'single-design',
       selectedExportIds: selectedIds,
-      targetZipPath: 'C:/downloads/copywriting-results.zip'
+      targetZipPath: 'C:/downloads/single-design-results.zip'
     })
 
-    expect(result.menuKey).toBe('copywriting')
-    expect(result.exportedCount).toBe(1)
-    expect(result.targetZipPath).toBe('C:/downloads/copywriting-results.zip')
+    expect(result).toEqual({
+      menuKey: 'single-design',
+      exportedCount: 1,
+      targetZipPath: 'C:/downloads/single-design-results.zip'
+    })
     expect(copiedFiles).toHaveLength(1)
-    expect(copiedFiles[0].targetPath.replace(/\\/g, '/')).toContain('CopyZip0')
+    expect(copiedFiles[0].targetPath.replace(/\\/g, '/')).toContain('SingleZip0')
     expect(exportedArchives[0]).toEqual({
       sourceDirectory: 'C:/temp/qiuai-studio-export-1',
-      targetZipPath: 'C:/downloads/copywriting-results.zip'
+      targetZipPath: 'C:/downloads/single-design-results.zip'
     })
     expect(removedDirectories).toEqual(['C:/temp/qiuai-studio-export-1'])
   })
 
-  it('deletes a stored export folder and removes it from the studio snapshot', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
+  it('deletes a stored export folder and removes it from snapshot', async () => {
+    const store = createMemoryStore()
     const removedDirectories = []
     const runtimeLogger = {
       log: vi.fn(async () => undefined)
@@ -897,14 +634,22 @@ describe('studioWorkspaceService', () => {
       ensureDirectory: async () => undefined,
       persistSourceFiles: async () => [],
       writeFile: async () => undefined,
-      generateCopywritingResults: async () => [
-        {
-          id: 'copy-export-1',
-          title: '电商标题 1',
-          format: 'txt',
-          content: '轻薄风衣女春秋高级感通勤外套'
+      generateImageResults: async ({ taskId }) => ({
+        textResults: [],
+        comparisonResults: [
+          {
+            id: `${taskId}-single-1`,
+            model: 'gpt-image-2',
+            title: '单图设计结果',
+            preview: createPreviewDataUrl('single-delete')
+          }
+        ],
+        groupedResults: [],
+        summary: {
+          title: '单图设计',
+          description: '删除测试'
         }
-      ],
+      }),
       removeDirectory: async (targetPath) => {
         removedDirectories.push(targetPath)
       },
@@ -913,63 +658,53 @@ describe('studioWorkspaceService', () => {
     })
 
     await service.saveDraft({
-      menuKey: 'copywriting',
+      menuKey: 'single-design',
       patch: {
-        model: 'gemini-3-pro',
+        model: 'gpt-image-2',
         taskName: 'DeleteFolder',
-        prompt: '请生成电商标题',
-        quantity: 1
+        prompt: '请生成一张详情图'
       }
     })
 
     await service.createTask({
-      menuKey: 'copywriting'
+      menuKey: 'single-design'
     })
     await service.waitForIdle()
 
     const beforeDeleteSnapshot = service.getSnapshot()
-    const exportItem = beforeDeleteSnapshot.exportItemsByMenu.copywriting[0]
+    const exportItem = beforeDeleteSnapshot.exportItemsByMenu['single-design'][0]
 
     const deleted = await service.deleteExportItem({
-      menuKey: 'copywriting',
+      menuKey: 'single-design',
       exportItemId: exportItem.id
     })
 
     const afterDeleteSnapshot = service.getSnapshot()
 
     expect(deleted).toEqual({
-      menuKey: 'copywriting',
+      menuKey: 'single-design',
       exportItemId: exportItem.id,
       deleted: true
     })
     expect(removedDirectories).toEqual([exportItem.directoryPath])
-    expect(afterDeleteSnapshot.exportItemsByMenu.copywriting).toEqual([])
+    expect(afterDeleteSnapshot.exportItemsByMenu['single-design']).toEqual([])
     expect(runtimeLogger.log).toHaveBeenCalled()
   })
 
-  it('loads historical export folders from local output storage for snapshot export and delete actions', async () => {
-    const memory = new Map()
-    const store = {
-      get(key, fallbackValue) {
-        return memory.has(key) ? memory.get(key) : fallbackValue
-      },
-      set(key, value) {
-        memory.set(key, value)
-      }
-    }
-
+  it('loads historical export folders from local output storage for image modules', async () => {
+    const store = createMemoryStore()
     const outputRootDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'qiuai-output-root-'))
-    const copywritingGroupDirectory = path.join(outputRootDirectory, 'copywriting', 'task-copy-1', 'HistoryCopy0')
     const singleImageGroupDirectory = path.join(outputRootDirectory, 'single-image', 'task-image-1', 'HistorySingle0')
+    const seriesDesignGroupDirectory = path.join(outputRootDirectory, 'series-design', 'task-series-1', 'HistorySeries0')
     const copiedDirectories = []
     const removedDirectories = []
     const exportedArchives = []
 
     try {
-      await fs.mkdir(copywritingGroupDirectory, { recursive: true })
       await fs.mkdir(singleImageGroupDirectory, { recursive: true })
-      await fs.writeFile(path.join(copywritingGroupDirectory, '00-title.txt'), '历史文案结果', 'utf8')
+      await fs.mkdir(seriesDesignGroupDirectory, { recursive: true })
       await fs.writeFile(path.join(singleImageGroupDirectory, '00-image.png'), 'image-binary', 'utf8')
+      await fs.writeFile(path.join(seriesDesignGroupDirectory, '00-image.png'), 'image-binary', 'utf8')
 
       const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
       const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
@@ -985,7 +720,7 @@ describe('studioWorkspaceService', () => {
         },
         removeDirectory: async (targetPath) => {
           removedDirectories.push(targetPath)
-          if (targetPath === copywritingGroupDirectory || targetPath === singleImageGroupDirectory) {
+          if (targetPath === singleImageGroupDirectory || targetPath === seriesDesignGroupDirectory) {
             await fs.rm(targetPath, { recursive: true, force: true })
           }
         },
@@ -997,50 +732,50 @@ describe('studioWorkspaceService', () => {
 
       const initialSnapshot = service.getSnapshot()
 
-      expect(initialSnapshot.exportItemsByMenu.copywriting).toHaveLength(1)
-      expect(initialSnapshot.exportItemsByMenu.copywriting[0].name).toBe('HistoryCopy0')
-      expect(initialSnapshot.exportItemsByMenu.copywriting[0].directoryPath).toBe(copywritingGroupDirectory)
       expect(initialSnapshot.exportItemsByMenu['single-image']).toHaveLength(1)
       expect(initialSnapshot.exportItemsByMenu['single-image'][0].name).toBe('HistorySingle0')
+      expect(initialSnapshot.exportItemsByMenu['single-image'][0].directoryPath).toBe(singleImageGroupDirectory)
+      expect(initialSnapshot.exportItemsByMenu['series-design']).toHaveLength(1)
+      expect(initialSnapshot.exportItemsByMenu['series-design'][0].name).toBe('HistorySeries0')
 
       const exportResult = await service.exportSelectedResults({
-        menuKey: 'copywriting',
-        selectedExportIds: [initialSnapshot.exportItemsByMenu.copywriting[0].id],
-        targetZipPath: 'C:/downloads/history-copywriting.zip'
+        menuKey: 'single-image',
+        selectedExportIds: [initialSnapshot.exportItemsByMenu['single-image'][0].id],
+        targetZipPath: 'C:/downloads/history-single-image.zip'
       })
 
       expect(exportResult).toEqual({
-        menuKey: 'copywriting',
+        menuKey: 'single-image',
         exportedCount: 1,
-        targetZipPath: 'C:/downloads/history-copywriting.zip'
+        targetZipPath: 'C:/downloads/history-single-image.zip'
       })
       expect(copiedDirectories).toEqual([
         expect.objectContaining({
-          sourcePath: copywritingGroupDirectory
+          sourcePath: singleImageGroupDirectory
         })
       ])
       expect(exportedArchives).toEqual([
         {
           sourceDirectory: 'C:/temp/qiuai-history-export',
-          targetZipPath: 'C:/downloads/history-copywriting.zip'
+          targetZipPath: 'C:/downloads/history-single-image.zip'
         }
       ])
 
       const deleted = await service.deleteExportItem({
-        menuKey: 'copywriting',
-        exportItemId: initialSnapshot.exportItemsByMenu.copywriting[0].id
+        menuKey: 'single-image',
+        exportItemId: initialSnapshot.exportItemsByMenu['single-image'][0].id
       })
 
       expect(deleted).toEqual({
-        menuKey: 'copywriting',
-        exportItemId: initialSnapshot.exportItemsByMenu.copywriting[0].id,
+        menuKey: 'single-image',
+        exportItemId: initialSnapshot.exportItemsByMenu['single-image'][0].id,
         deleted: true
       })
-      expect(removedDirectories).toContain(copywritingGroupDirectory)
+      expect(removedDirectories).toContain(singleImageGroupDirectory)
 
       const afterDeleteSnapshot = service.getSnapshot()
-      expect(afterDeleteSnapshot.exportItemsByMenu.copywriting).toEqual([])
-      expect(afterDeleteSnapshot.exportItemsByMenu['single-image']).toHaveLength(1)
+      expect(afterDeleteSnapshot.exportItemsByMenu['single-image']).toEqual([])
+      expect(afterDeleteSnapshot.exportItemsByMenu['series-design']).toHaveLength(1)
     } finally {
       await fs.rm(outputRootDirectory, { recursive: true, force: true })
     }

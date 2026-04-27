@@ -12,14 +12,14 @@ async function safeRecordMessage (messageRecorder, payload) {
   }
 }
 
-function createHttpClientService ({ apiBaseUrl, apiKey, requestClient = axios.create, messageRecorder }) {
+function createHttpClientService ({ apiBaseUrl, apiKey, requestClient = axios.create, messageRecorder, timeoutMs = 30000 }) {
   const client = requestClient({
     baseURL: apiBaseUrl,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`
     },
-    timeout: 30000
+    timeout: timeoutMs
   })
 
   return {

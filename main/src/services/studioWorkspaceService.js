@@ -4,7 +4,6 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const os = require('node:os')
 const { exportTaskDirectory: defaultExportTaskDirectory } = require('./taskExportService')
-const { createCopywritingGenerationService } = require('./copywritingGenerationService')
 const { createStudioImageGenerationService, normalizeSingleImageModels } = require('./studioImageGenerationService')
 const {
   ensureDirectory,
@@ -33,17 +32,11 @@ const themeOptions = [
 
 const menuItems = [
   { key: 'workspace', label: '工作台' },
-  { key: 'copywriting', label: '文案设计' },
   { key: 'single-image', label: '单图测试' },
   { key: 'single-design', label: '单图设计' },
   { key: 'series-design', label: '套图设计' },
   { key: 'series-generate', label: '套图生成' },
   { key: 'model-pricing', label: '模型价格' }
-]
-
-const copywritingModelOptions = [
-  { label: 'gemini-3-pro', value: 'gemini-3-pro' },
-  { label: 'gemini-3.1-pro', value: 'gemini-3.1-pro' }
 ]
 
 const imageModelOptions = [
@@ -61,22 +54,17 @@ const imageModelOptions = [
 ]
 
 const modelPricingCatalog = [
-  { name: 'nano-banana-2-4k-cl', credits: '3000 / 次', price: '¥0.15~¥0.3 / 次' },
-  { name: 'nano-banana-pro-4k-vip', credits: '16000 / 次', price: '¥0.8~¥1.6 / 次' },
-  { name: 'nano-banana', credits: '1400 / 次', price: '¥0.07~¥0.14 / 次' },
-  { name: 'gemini-3-pro', credits: '按 token 计算', price: 'input: ¥1~¥2/M tokens / output: ¥6~¥12/M tokens' },
-  { name: 'gemini-3.1-pro', credits: '按 token 计算', price: 'input: ¥1~¥2/M tokens / output: ¥6~¥12/M tokens' },
-  { name: 'gemini-2.5-pro', credits: '按 token 计算', price: 'input: ¥1.25~¥2.5/M tokens / output: ¥6.25~¥12.5/M tokens' },
-  { name: 'sora-create-character', credits: '200 / 次', price: '¥0.01~¥0.02 / 次' },
-  { name: 'sora-upload-character', credits: '200 / 次', price: '¥0.01~¥0.02 / 次' },
-  { name: 'gpt-image-2', credits: '600 / 次', price: '¥0.03~¥0.06 / 次' },
-  { name: 'nano-banana-pro', credits: '1800 / 次', price: '¥0.09~¥0.18 / 次' },
-  { name: 'nano-banana-fast', credits: '440 / 次', price: '¥0.022~¥0.044 / 次' },
-  { name: 'nano-banana-2', credits: '1200 / 次', price: '¥0.06~¥0.12 / 次' },
-  { name: 'nano-banana-pro-vt', credits: '1800 / 次', price: '¥0.09~¥0.18 / 次' },
-  { name: 'nano-banana-pro-cl', credits: '6000 / 次', price: '¥0.3~¥0.6 / 次' },
-  { name: 'nano-banana-2-cl', credits: '1600 / 次', price: '¥0.08~¥0.16 / 次' },
-  { name: 'nano-banana-pro-vip', credits: '10000 / 次', price: '¥0.5~¥1 / 次' }
+  { name: 'nano-banana-fast', credits: '440 / 次' },
+  { name: 'gpt-image-2', credits: '600 / 次' },
+  { name: 'nano-banana-2', credits: '1200 / 次' },
+  { name: 'nano-banana', credits: '1400 / 次' },
+  { name: 'nano-banana-2-cl', credits: '1600 / 次' },
+  { name: 'nano-banana-pro', credits: '1800 / 次' },
+  { name: 'nano-banana-pro-vt', credits: '1800 / 次' },
+  { name: 'nano-banana-2-4k-cl', credits: '3000 / 次' },
+  { name: 'nano-banana-pro-cl', credits: '6000 / 次' },
+  { name: 'nano-banana-pro-vip', credits: '10000 / 次' },
+  { name: 'nano-banana-pro-4k-vip', credits: '16000 / 次' }
 ]
 
 const batchOptions = [
@@ -88,7 +76,6 @@ const batchOptions = [
 const menuLabelMap = Object.fromEntries(menuItems.map((item) => [item.key, item.label]))
 const taskCategoryMap = {
   workspace: '单图测试',
-  copywriting: '文案设计',
   'single-image': '单图测试',
   'single-design': '单图设计',
   'series-design': '套图设计',
@@ -96,29 +83,24 @@ const taskCategoryMap = {
   'model-pricing': '单图测试'
 }
 const taskMenuMapByCategory = {
-  文案设计: 'copywriting',
   单图测试: 'single-image',
   单图设计: 'single-design',
   套图设计: 'series-design',
   套图生成: 'series-generate'
 }
 const workspaceDashboardSections = [
-  { cardKey: 'copywritingStats', menuKey: 'copywriting', title: '文案生成统计' },
-  { cardKey: 'seriesDesignStats', menuKey: 'series-design', title: '套图设计统计' },
   { cardKey: 'singleImageStats', menuKey: 'single-image', title: '单图测试统计' },
+  { cardKey: 'seriesDesignStats', menuKey: 'series-design', title: '套图设计统计' },
+  { cardKey: 'singleDesignStats', menuKey: 'single-design', title: '单图设计统计' },
   { cardKey: 'seriesGenerateStats', menuKey: 'series-generate', title: '套图生成统计' }
 ]
 
-function getModelOptionsByMenu(menuKey) {
-  if (menuKey === 'copywriting') {
-    return copywritingModelOptions
-  }
-
+function getModelOptionsByMenu() {
   return imageModelOptions
 }
 
-function resolveDefaultModelForMenu(menuKey) {
-  const modelOptions = getModelOptionsByMenu(menuKey)
+function resolveDefaultModelForMenu() {
+  const modelOptions = getModelOptionsByMenu()
   return modelOptions[0]?.value || 'gpt-image-2'
 }
 
@@ -162,7 +144,8 @@ function normalizeImageAssignments(assignments = []) {
           ...normalizedAsset,
           id: item.id || `series-design-${index + 1}`,
           selected: item.selected !== false,
-          prompt: item.prompt || ''
+          prompt: item.prompt || '',
+          imageType: item.imageType || ''
         }
       })
       .filter(Boolean)
@@ -179,7 +162,8 @@ function normalizePromptAssignments(promptAssignments = [], count = 1) {
     return {
       id: currentAssignment.id || `series-generate-${index + 1}`,
       index: index + 1,
-      prompt: currentAssignment.prompt || ''
+      prompt: currentAssignment.prompt || '',
+      imageType: currentAssignment.imageType || ''
     }
   })
 }
@@ -191,25 +175,10 @@ function normalizeCompareModels(compareModels = []) {
 function normalizeDraftForMenu(menuKey, draft = {}) {
   const defaultDraft = createDefaultDrafts()[menuKey] || {}
   const allowedModels = new Set(getModelOptionsByMenu(menuKey).map((item) => item.value))
-  const nextModel = allowedModels.has(draft.model)
-    ? draft.model
+  const preferredDraftModel = draft.model
+  const nextModel = allowedModels.has(preferredDraftModel)
+    ? preferredDraftModel
     : (defaultDraft.model || resolveDefaultModelForMenu(menuKey))
-  const referenceImages = Array.isArray(draft.referenceImages)
-    ? draft.referenceImages.map((item) => normalizeImageAsset(item)).filter(Boolean)
-    : []
-
-  if (menuKey === 'copywriting') {
-    return {
-      ...defaultDraft,
-      ...draft,
-      model: nextModel,
-      copyMode: draft.copyMode === 'image-reference' ? 'image-reference' : 'prompt-only',
-      taskName: String(draft.taskName || defaultDraft.taskName || ''),
-      referenceImages,
-      quantity: Math.max(1, Math.min(20, Number(draft.quantity) || defaultDraft.quantity || 1)),
-      creativity: Math.max(0, Math.min(100, Number(draft.creativity) || defaultDraft.creativity || 68))
-    }
-  }
 
   if (menuKey === 'single-image') {
     return {
@@ -294,15 +263,6 @@ function createDefaultDrafts() {
       prompt: '',
       model: resolveDefaultModelForMenu('single-image')
     },
-    copywriting: {
-      prompt: '请根据商品卖点批量生成文案',
-      model: resolveDefaultModelForMenu('copywriting'),
-      taskName: '',
-      copyMode: 'prompt-only',
-      referenceImages: [],
-      quantity: 5,
-      creativity: 68
-    },
     'single-image': {
       prompt: '保持产品主体不变，优化光影与质感',
       model: resolveDefaultModelForMenu('single-image'),
@@ -350,12 +310,6 @@ function createDefaultDrafts() {
 function createDefaultResultsByMenu() {
   return {
     workspace: {
-      textResults: [],
-      comparisonResults: [],
-      groupedResults: [],
-      summary: null
-    },
-    copywriting: {
       textResults: [],
       comparisonResults: [],
       groupedResults: [],
@@ -449,7 +403,7 @@ function scanStoredExportItemsByMenu({
   statSync = fsSync.statSync
 } = {}) {
   const exportItemsByMenu = createDefaultExportItemsByMenu()
-  const supportedMenuKeys = ['copywriting', 'single-image', 'single-design', 'series-design', 'series-generate']
+  const supportedMenuKeys = ['single-image', 'single-design', 'series-design', 'series-generate']
 
   for (const menuKey of supportedMenuKeys) {
     const featureRootDirectory = path.resolve(outputRootDirectory, getFeatureDirectoryKey(menuKey))
@@ -532,19 +486,36 @@ function mergeExportItemsByMenu({
 
 function mergeStudioState(savedState = {}) {
   const defaultState = createDefaultState()
+  const mergedFormDrafts = {
+    ...defaultState.formDrafts,
+    ...(savedState.formDrafts || {})
+  }
+  const normalizedFormDrafts = Object.fromEntries(menuItems.map((item) => {
+    return [
+      item.key,
+      normalizeDraftForMenu(item.key, mergedFormDrafts[item.key] || {})
+    ]
+  }))
+
   return {
-    formDrafts: {
-      ...defaultState.formDrafts,
-      ...(savedState.formDrafts || {})
-    },
-    resultsByMenu: {
-      ...defaultState.resultsByMenu,
-      ...(savedState.resultsByMenu || {})
-    },
-    exportItemsByMenu: {
-      ...defaultState.exportItemsByMenu,
-      ...(savedState.exportItemsByMenu || {})
-    },
+    formDrafts: normalizedFormDrafts,
+    resultsByMenu: Object.fromEntries(menuItems.map((item) => {
+      return [
+        item.key,
+        {
+          ...(defaultState.resultsByMenu[item.key] || {}),
+          ...((savedState.resultsByMenu || {})[item.key] || {})
+        }
+      ]
+    })),
+    exportItemsByMenu: Object.fromEntries(menuItems.map((item) => {
+      return [
+        item.key,
+        Array.isArray((savedState.exportItemsByMenu || {})[item.key])
+          ? (savedState.exportItemsByMenu || {})[item.key]
+          : (defaultState.exportItemsByMenu[item.key] || [])
+      ]
+    })),
     tasks: Array.isArray(savedState.tasks) ? savedState.tasks : defaultState.tasks
   }
 }
@@ -639,28 +610,9 @@ function buildSettingsSummary(settings = {}) {
 }
 
 async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
-  generateCopywritingResults,
   generateImageResults,
   onProgress
 }) {
-  if (menuKey === 'copywriting') {
-    const textResults = await generateCopywritingResults({
-      draft,
-      taskId,
-      onProgress
-    })
-
-    return {
-      textResults,
-      comparisonResults: [],
-      groupedResults: [],
-      summary: {
-        title: `文案生成 ${textResults.length} 条`,
-        description: `文案 / ${draft.model}`
-      }
-    }
-  }
-
   if (menuKey === 'single-image') {
     return generateImageResults({
       menuKey,
@@ -853,12 +805,13 @@ async function saveStudioResults({
     for (const [index, output] of (group.outputs || []).entries()) {
       let savedPath = ''
       const parsedPreview = parseDataUrlPayload(output.preview || '')
+      const outputBaseName = sanitizePathSegment(output.title || `result-${index + 1}`, `result-${index + 1}`)
 
       if (parsedPreview) {
-        savedPath = path.resolve(groupDirectory, `${menuKey}-${taskId}-${index + 1}${parsedPreview.extension}`)
+        savedPath = path.resolve(groupDirectory, `${String(index).padStart(2, '0')}-${outputBaseName}${parsedPreview.extension}`)
         await writeFile(savedPath, parsedPreview.buffer)
       } else if (output.savedPath && await fileExists(output.savedPath)) {
-        savedPath = path.resolve(groupDirectory, `${String(index).padStart(2, '0')}-${path.basename(output.savedPath)}`)
+        savedPath = path.resolve(groupDirectory, `${String(index).padStart(2, '0')}-${outputBaseName}${path.extname(output.savedPath) || ''}`)
         if (path.resolve(output.savedPath) !== path.resolve(savedPath)) {
           await fs.copyFile(output.savedPath, savedPath)
         }
@@ -895,10 +848,6 @@ async function saveStudioResults({
 }
 
 function resolveInputCount(menuKey, draft) {
-  if (menuKey === 'copywriting') {
-    return String(draft.prompt || '').trim() ? 1 : 0
-  }
-
   if (menuKey === 'single-image') {
     return draft.sourceImage ? 1 : 0
   }
@@ -963,15 +912,7 @@ function enrichResultPayloadSummary({ menuKey, draft, resultPayload, elapsedMill
   }
 }
 
-function resolveCopywritingRequestCount(draft = {}) {
-  return Math.max(1, Number(draft.quantity) || 1)
-}
-
 function resolveEstimatedInputCount(menuKey, draft = {}) {
-  if (menuKey === 'copywriting') {
-    return String(draft.prompt || '').trim() ? 1 : 0
-  }
-
   if (menuKey === 'single-image') {
     return draft.sourceImage ? 1 : 0
   }
@@ -994,10 +935,6 @@ function resolveEstimatedInputCount(menuKey, draft = {}) {
 }
 
 function resolveEstimatedPlannedOutputCount(menuKey, draft = {}) {
-  if (menuKey === 'copywriting') {
-    return resolveCopywritingRequestCount(draft)
-  }
-
   if (menuKey === 'single-image') {
     return normalizeCompareModels(draft.compareModels).length
   }
@@ -1018,12 +955,7 @@ function resolveEstimatedPlannedOutputCount(menuKey, draft = {}) {
   return 0
 }
 
-function resolveTaskTitle(menuKey, draft = {}, plannedOutputCount = 0) {
-  if (menuKey === 'copywriting') {
-    const copywritingOutputCount = plannedOutputCount || resolveCopywritingRequestCount(draft)
-    return `文案生成 ${copywritingOutputCount} 条`
-  }
-
+function resolveTaskTitle(menuKey, draft = {}) {
   if (menuKey === 'single-image') {
     return '单图四模型对比'
   }
@@ -1044,10 +976,6 @@ function resolveTaskTitle(menuKey, draft = {}, plannedOutputCount = 0) {
 }
 
 function resolveTaskModelSummary(menuKey, draft = {}) {
-  if (menuKey === 'copywriting') {
-    return draft.model || ''
-  }
-
   if (menuKey === 'single-image') {
     return normalizeCompareModels(draft.compareModels).join(' / ')
   }
@@ -1184,6 +1112,7 @@ function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
 function createStudioWorkspaceService({
   store,
   settingsService,
+  promptTemplateService,
   messageRecorder,
   runtimeLogger,
   outputRootDirectory = OUTPUT_ROOT_DIRECTORY,
@@ -1200,20 +1129,15 @@ function createStudioWorkspaceService({
   readdirSync = fsSync.readdirSync,
   statSync = fsSync.statSync,
   exportTaskDirectory: exportTaskDirectoryDependency = defaultExportTaskDirectory,
-  generateCopywritingResults,
   generateImageResults,
   taskManagerService
 }) {
-  const copywritingGenerationService = createCopywritingGenerationService({
-    settingsService,
-    messageRecorder
-  })
   const studioImageGenerationService = createStudioImageGenerationService({
     settingsService,
+    promptTemplateService,
     messageRecorder,
     runtimeLogger
   })
-  const generateCopywritingResultsDependency = generateCopywritingResults || copywritingGenerationService.generateCopywritingResults
   const generateImageResultsDependency = generateImageResults || studioImageGenerationService.generateImageResults
   const queuedTaskExecutions = []
   let isTaskQueueRunning = false
@@ -1268,16 +1192,6 @@ function createStudioWorkspaceService({
     const sourcePaths = []
     const sourcePathAssignments = []
 
-    if (menuKey === 'copywriting') {
-      draft.referenceImages.forEach((item, index) => {
-        const sourcePath = item.path || item.storedPath || ''
-        if (sourcePath) {
-          sourcePathAssignments.push({ type: 'reference', index })
-          sourcePaths.push(sourcePath)
-        }
-      })
-    }
-
     if (menuKey === 'single-image') {
       const sourcePath = draft.sourceImage?.path || draft.sourceImage?.storedPath || ''
       if (sourcePath) {
@@ -1324,10 +1238,6 @@ function createStudioWorkspaceService({
       const storedPath = persistedSourcePaths[index] || ''
       if (!storedPath) {
         return
-      }
-
-      if (assignment.type === 'reference' && preparedDraft.referenceImages?.[assignment.index]) {
-        preparedDraft.referenceImages[assignment.index].storedPath = storedPath
       }
 
       if (assignment.type === 'single-source' && preparedDraft.sourceImage) {
@@ -1402,7 +1312,6 @@ function createStudioWorkspaceService({
         })
       }
       const resultPayload = await buildResultPayload(menuKey, preparedDraft, taskId, outputDirectory, {
-        generateCopywritingResults: generateCopywritingResultsDependency,
         generateImageResults: generateImageResultsDependency,
         onProgress: handleTaskProgress
       })
@@ -1549,7 +1458,6 @@ function createStudioWorkspaceService({
       themeOptions,
       menuItems,
       batchOptions,
-      copywritingModelOptions,
       imageModelOptions,
       modelPricingCatalog,
       formDrafts: state.formDrafts,
@@ -1770,7 +1678,6 @@ module.exports = {
   themeOptions,
   menuItems,
   batchOptions,
-  copywritingModelOptions,
   imageModelOptions,
   modelPricingCatalog,
   createStudioWorkspaceService

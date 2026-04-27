@@ -10,8 +10,11 @@ import {
   exportStudioResults,
   getSettings,
   getStudioSnapshot,
+  listPromptTemplates,
   openOutputDirectory,
+  removePromptTemplate,
   saveSettings,
+  savePromptTemplate,
   saveStudioDraft
 } from './services/desktopBridge'
 
@@ -23,17 +26,12 @@ const themeOptions = [
 
 const menuItems = [
   { key: 'workspace', label: '工作台' },
-  { key: 'copywriting', label: '文案设计' },
   { key: 'single-image', label: '单图测试' },
   { key: 'single-design', label: '单图设计' },
   { key: 'series-design', label: '套图设计' },
   { key: 'series-generate', label: '套图生成' },
-  { key: 'model-pricing', label: '模型价格' }
-]
-
-const copywritingModelOptions = [
-  { label: 'gemini-3-pro', value: 'gemini-3-pro' },
-  { label: 'gemini-3.1-pro', value: 'gemini-3.1-pro' }
+  { key: 'model-pricing', label: '模型价格' },
+  { key: 'prompt-library', label: '提示词库' }
 ]
 
 const imageModelOptions = [
@@ -51,22 +49,26 @@ const imageModelOptions = [
 ]
 
 const modelPricingCatalog = [
-  { name: 'nano-banana-2-4k-cl', credits: '3000 / 次', price: '¥0.15~¥0.3 / 次' },
-  { name: 'nano-banana-pro-4k-vip', credits: '16000 / 次', price: '¥0.8~¥1.6 / 次' },
-  { name: 'nano-banana', credits: '1400 / 次', price: '¥0.07~¥0.14 / 次' },
-  { name: 'gemini-3-pro', credits: '按 token 计算', price: 'input: ¥1~¥2/M tokens / output: ¥6~¥12/M tokens' },
-  { name: 'gemini-3.1-pro', credits: '按 token 计算', price: 'input: ¥1~¥2/M tokens / output: ¥6~¥12/M tokens' },
-  { name: 'gemini-2.5-pro', credits: '按 token 计算', price: 'input: ¥1.25~¥2.5/M tokens / output: ¥6.25~¥12.5/M tokens' },
-  { name: 'sora-create-character', credits: '200 / 次', price: '¥0.01~¥0.02 / 次' },
-  { name: 'sora-upload-character', credits: '200 / 次', price: '¥0.01~¥0.02 / 次' },
-  { name: 'gpt-image-2', credits: '600 / 次', price: '¥0.03~¥0.06 / 次' },
-  { name: 'nano-banana-pro', credits: '1800 / 次', price: '¥0.09~¥0.18 / 次' },
-  { name: 'nano-banana-fast', credits: '440 / 次', price: '¥0.022~¥0.044 / 次' },
-  { name: 'nano-banana-2', credits: '1200 / 次', price: '¥0.06~¥0.12 / 次' },
-  { name: 'nano-banana-pro-vt', credits: '1800 / 次', price: '¥0.09~¥0.18 / 次' },
-  { name: 'nano-banana-pro-cl', credits: '6000 / 次', price: '¥0.3~¥0.6 / 次' },
-  { name: 'nano-banana-2-cl', credits: '1600 / 次', price: '¥0.08~¥0.16 / 次' },
-  { name: 'nano-banana-pro-vip', credits: '10000 / 次', price: '¥0.5~¥1 / 次' }
+  { name: 'nano-banana-fast', credits: '440 / 次' },
+  { name: 'gpt-image-2', credits: '600 / 次' },
+  { name: 'nano-banana-2', credits: '1200 / 次' },
+  { name: 'nano-banana', credits: '1400 / 次' },
+  { name: 'nano-banana-2-cl', credits: '1600 / 次' },
+  { name: 'nano-banana-pro', credits: '1800 / 次' },
+  { name: 'nano-banana-pro-vt', credits: '1800 / 次' },
+  { name: 'nano-banana-2-4k-cl', credits: '3000 / 次' },
+  { name: 'nano-banana-pro-cl', credits: '6000 / 次' },
+  { name: 'nano-banana-pro-vip', credits: '10000 / 次' },
+  { name: 'nano-banana-pro-4k-vip', credits: '16000 / 次' }
+]
+
+const rechargePricingCatalog = [
+  { price: '30¥', credits: '100000积分', bonus: '' },
+  { price: '60¥', credits: '250000积分', bonus: '送25%' },
+  { price: '150¥', credits: '750000积分', bonus: '送50%' },
+  { price: '300¥', credits: '1600000积分', bonus: '送60%' },
+  { price: '1500¥', credits: '9000000积分', bonus: '送80%' },
+  { price: '3000¥', credits: '20000000积分', bonus: '送100%' }
 ]
 
 const batchOptions = [
@@ -84,7 +86,6 @@ const ratioOptions = [
 
 const activeTheme = ref('dark')
 const activeMenu = ref('workspace')
-const copywritingImageInput = ref(null)
 const singleImageInput = ref(null)
 const singleDesignImageInput = ref(null)
 const seriesDesignImageInput = ref(null)
@@ -98,6 +99,7 @@ const resultsByMenu = ref(createEmptyResultsByMenu())
 const exportItemsByMenu = ref(createEmptyExportItemsByMenu())
 const workspaceDashboard = ref(createEmptyWorkspaceDashboard())
 const hostInfo = ref(createEmptyHostInfo())
+const promptTemplates = ref([])
 const actionNotice = reactive({
   visible: false,
   type: 'success',
@@ -113,11 +115,7 @@ let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
 let isRefreshingStudioRuntime = false
 
-function resolveDefaultModelForMenu(menuKey) {
-  if (menuKey === 'copywriting') {
-    return copywritingModelOptions[0].value
-  }
-
+function resolveDefaultModelForMenu() {
   return imageModelOptions[0].value
 }
 
@@ -142,24 +140,13 @@ function createSeriesGeneratePromptAssignments(count, existingAssignments = []) 
     return {
       id: currentAssignment.id || `series-generate-${index + 1}`,
       index: index + 1,
-      prompt: currentAssignment.prompt || ''
+      prompt: currentAssignment.prompt || '',
+      imageType: currentAssignment.imageType || ''
     }
   })
 }
 
 function createDraftForm(menuKey) {
-  if (menuKey === 'copywriting') {
-    return {
-      prompt: '请根据商品卖点批量生成文案',
-      model: resolveDefaultModelForMenu(menuKey),
-      taskName: '',
-      copyMode: 'prompt-only',
-      referenceImages: [],
-      quantity: 5,
-      creativity: 68
-    }
-  }
-
   if (menuKey === 'single-image') {
     return {
       prompt: '保持主体不变，测试不同模型效果',
@@ -251,9 +238,9 @@ function createEmptyStatsCard(title) {
 
 function createEmptyWorkspaceDashboard() {
   return {
-    copywritingStats: createEmptyStatsCard('文案生成统计'),
     seriesDesignStats: createEmptyStatsCard('套图设计统计'),
     singleImageStats: createEmptyStatsCard('单图测试统计'),
+    singleDesignStats: createEmptyStatsCard('单图设计统计'),
     seriesGenerateStats: createEmptyStatsCard('套图生成统计')
   }
 }
@@ -291,10 +278,8 @@ function revokePreview(preview) {
 }
 
 function revokeDraftPreviews(draft = {}) {
-  const referenceImages = draft.referenceImages || []
   const imageAssignments = draft.imageAssignments || []
 
-  referenceImages.forEach((item) => revokePreview(item.preview))
   imageAssignments.forEach((item) => revokePreview(item.preview))
   revokePreview(draft.sourceImage?.preview)
 }
@@ -381,10 +366,6 @@ const currentMenuLabel = computed(() => {
 })
 
 const currentModelOptions = computed(() => {
-  if (activeMenu.value === 'copywriting') {
-    return copywritingModelOptions
-  }
-
   return imageModelOptions
 })
 
@@ -396,7 +377,7 @@ const sortedTasks = computed(() => {
 
 const latestTaskForActiveMenu = computed(() => {
   const matchedTask = sortedTasks.value.find((task) => task.menuKey === activeMenu.value)
-  return matchedTask || sortedTasks.value[0] || null
+  return matchedTask || null
 })
 
 const resultPayload = computed(() => {
@@ -405,6 +386,14 @@ const resultPayload = computed(() => {
 
 const exportItems = computed(() => {
   return exportItemsByMenu.value[activeMenu.value] || exportItemsByMenu.value.workspace
+})
+
+const fixedPromptTemplates = computed(() => {
+  return promptTemplates.value.filter((item) => item.source === 'system-fixed')
+})
+
+const customPromptTemplates = computed(() => {
+  return promptTemplates.value.filter((item) => item.source === 'custom')
 })
 
 const currentDraftForm = computed(() => {
@@ -463,6 +452,14 @@ async function loadStudioSnapshot(options = {}) {
     applySnapshot(snapshot, settings, options)
   } catch (error) {
     console.error('Failed to load studio snapshot', error)
+  }
+}
+
+async function loadPromptTemplateState() {
+  try {
+    promptTemplates.value = await listPromptTemplates()
+  } catch (error) {
+    console.error('Failed to load prompt templates', error)
   }
 }
 
@@ -570,50 +567,6 @@ function handleFieldUpdate({ field, value }) {
   void persistDraftPatch(activeMenu.value, nextDraft)
 }
 
-function handleOpenCopywritingImagePicker() {
-  copywritingImageInput.value?.click()
-}
-
-function handleSelectCopywritingImages(event) {
-  const fileList = Array.from(event?.target?.files || [])
-
-  if (!fileList.length) {
-    return
-  }
-
-  ensureDraftForMenu('copywriting')
-  revokeDraftPreviews(formDrafts.value.copywriting)
-  const referenceImages = fileList.map((file) => createImageAsset(file, 'copywriting-image'))
-  const nextDraft = {
-    ...formDrafts.value.copywriting,
-    copyMode: 'image-reference',
-    referenceImages
-  }
-
-  replaceDraft('copywriting', nextDraft)
-  void persistDraftPatch('copywriting', {
-    copyMode: 'image-reference',
-    referenceImages
-  })
-  event.target.value = ''
-}
-
-function handleClearCopywritingImages() {
-  ensureDraftForMenu('copywriting')
-  revokeDraftPreviews(formDrafts.value.copywriting)
-  const nextDraft = {
-    ...formDrafts.value.copywriting,
-    copyMode: 'prompt-only',
-    referenceImages: []
-  }
-
-  replaceDraft('copywriting', nextDraft)
-  void persistDraftPatch('copywriting', {
-    copyMode: 'prompt-only',
-    referenceImages: []
-  })
-}
-
 function handleOpenSingleImagePicker() {
   singleImageInput.value?.click()
 }
@@ -689,7 +642,8 @@ function handleSelectSeriesDesignImages(event) {
   const imageAssignments = fileList.map((file) => ({
     ...createImageAsset(file, 'series-design'),
     selected: true,
-    prompt: ''
+    prompt: '',
+    imageType: ''
   }))
   const nextDraft = {
     ...formDrafts.value['series-design'],
@@ -735,14 +689,6 @@ function validateCurrentTaskBeforeSubmit() {
     return '请先输入任务名称'
   }
 
-  if (activeMenu.value === 'copywriting') {
-    if (!String(draft.prompt || '').trim()) {
-      return '请先输入文案需求'
-    }
-
-    return ''
-  }
-
   if (activeMenu.value === 'single-image') {
     if (!draft.sourceImage) {
       return '请先上传一张测试图片'
@@ -785,6 +731,10 @@ function validateCurrentTaskBeforeSubmit() {
       return '请为每一张选中图片填写单独提示词'
     }
 
+    if (assignments.some((item) => item.selected !== false && !String(item.imageType || '').trim())) {
+      return '请为每一张选中图片选择图片类型'
+    }
+
     if (selectedCount * batchCount > 20) {
       return '当前任务过重，请将“选中图片数 x 批次”控制在 20 以内'
     }
@@ -807,6 +757,10 @@ function validateCurrentTaskBeforeSubmit() {
 
     if (promptAssignments.some((item) => !String(item.prompt || '').trim())) {
       return '请完整填写每一张图片的单独提示词'
+    }
+
+    if (promptAssignments.some((item) => !String(item.imageType || '').trim())) {
+      return '请为每一张图片选择图片类型'
     }
 
     if (totalCount > 20) {
@@ -1035,8 +989,49 @@ async function handleSaveApiConfig() {
   }
 }
 
+async function handleSavePromptTemplate(payload) {
+  try {
+    await savePromptTemplate(payload)
+    await loadPromptTemplateState()
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: '提示词模板已保存'
+    })
+  } catch (error) {
+    console.error('Failed to save prompt template', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `提示词模板保存失败：${buildErrorMessage(error, '模板保存未完成')}`
+    })
+  }
+}
+
+async function handleRemovePromptTemplate(templateId) {
+  try {
+    await removePromptTemplate({
+      id: templateId
+    })
+    await loadPromptTemplateState()
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: '提示词模板已删除'
+    })
+  } catch (error) {
+    console.error('Failed to remove prompt template', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `提示词模板删除失败：${buildErrorMessage(error, '模板删除未完成')}`
+    })
+  }
+}
+
 onMounted(() => {
   void loadStudioSnapshot()
+  void loadPromptTemplateState()
   studioRuntimePollTimer = window.setInterval(() => {
     void refreshStudioRuntimeState()
   }, 3000)
@@ -1074,14 +1069,6 @@ onBeforeUnmount(() => {
     </div>
 
     <section class="shell-grid">
-      <input
-        ref="copywritingImageInput"
-        class="visually-hidden"
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        multiple
-        @change="handleSelectCopywritingImages"
-      />
       <input
         ref="singleImageInput"
         class="visually-hidden"
@@ -1130,6 +1117,7 @@ onBeforeUnmount(() => {
           :ratio-options="ratioOptions"
           :submit-button-state="submitButtonState"
           :model-pricing-catalog="modelPricingCatalog"
+          :recharge-pricing-catalog="rechargePricingCatalog"
           :result-payload="resultPayload"
           :export-items="exportItems"
           :selected-export-ids="selectedExportIds"
@@ -1138,12 +1126,12 @@ onBeforeUnmount(() => {
           :host-info="hostInfo"
           :api-config-state="apiConfigDraft"
           :is-saving-api-config="isSavingApiConfig"
+          :fixed-prompt-templates="fixedPromptTemplates"
+          :custom-prompt-templates="customPromptTemplates"
           @update-field="handleFieldUpdate"
           @submit-task="handleSubmitTask"
           @toggle-export-item="handleToggleExportItem"
           @batch-download="handleBatchDownload"
-          @select-copywriting-images="handleOpenCopywritingImagePicker"
-          @clear-copywriting-images="handleClearCopywritingImages"
           @select-single-image="handleOpenSingleImagePicker"
           @select-single-design-image="handleOpenSingleDesignImagePicker"
           @select-series-design-images="handleOpenSeriesDesignPicker"
@@ -1152,6 +1140,8 @@ onBeforeUnmount(() => {
           @update-api-key="handleApiKeyUpdate"
           @switch-api-key="handleSwitchApiKey"
           @save-api-config="handleSaveApiConfig"
+          @save-prompt-template="handleSavePromptTemplate"
+          @remove-prompt-template="handleRemovePromptTemplate"
         />
       </section>
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 
 const props = defineProps({
   activeMenu: {
@@ -26,6 +26,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  customPromptTemplates: {
+    type: Array,
+    default: () => []
+  },
   submitButtonState: {
     type: String,
     default: 'idle'
@@ -35,29 +39,11 @@ const props = defineProps({
 const emit = defineEmits([
   'update-field',
   'submit-task',
-  'select-copywriting-images',
-  'clear-copywriting-images',
   'select-single-image',
   'select-single-design-image',
   'select-series-design-images',
   'select-series-generate-image'
 ])
-
-const menuHint = computed(() => {
-  const hintMap = {
-    copywriting: '批量生成提示词、电商标题、产品介绍等纯文本结果。',
-    'single-image': '上传一张测试图，对比 4 个模型的生成效果。',
-    'single-design': '选择 1 个模型做单图设计，可直接文生图，也可上传图片做图生图。',
-    'series-design': '上传一套图片，用统一风格和逐张提示词做选择性批量生图。',
-    'series-generate': '基于一张参考图，按统一风格和逐张提示词生成完整图片组。'
-  }
-
-  return hintMap[props.activeMenu] || '当前工作区配置。'
-})
-
-const copywritingReferenceImages = computed(() => {
-  return Array.isArray(props.draftForm.referenceImages) ? props.draftForm.referenceImages : []
-})
 
 const seriesAssignments = computed(() => {
   return Array.isArray(props.draftForm.imageAssignments) ? props.draftForm.imageAssignments : []
@@ -71,7 +57,21 @@ const seriesGeneratePromptAssignments = computed(() => {
   return Array.isArray(props.draftForm.promptAssignments) ? props.draftForm.promptAssignments : []
 })
 
+const seriesGenerateImageTypeOptions = [
+  '商品主图',
+  '详情图',
+  '细节图',
+  '尺寸图',
+  '白底图',
+  '颜色图'
+]
+
 const uploadIconUrl = new URL('../../../icon/shangchuan.png', import.meta.url).href
+const promptImportState = reactive({
+  visible: false,
+  targetKind: '',
+  index: -1
+})
 
 const submitButtonLabel = computed(() => {
   if (props.submitButtonState === 'submitting') {
@@ -132,7 +132,7 @@ function updateAssignment(index, field, value) {
   emitField('imageAssignments', nextAssignments)
 }
 
-function updateSeriesGeneratePrompt(index, value) {
+function updateSeriesGenerateAssignment(index, field, value) {
   const nextAssignments = seriesGeneratePromptAssignments.value.map((item, currentIndex) => {
     if (currentIndex !== index) {
       return item
@@ -140,7 +140,7 @@ function updateSeriesGeneratePrompt(index, value) {
 
     return {
       ...item,
-      prompt: value
+      [field]: value
     }
   })
 
@@ -154,6 +154,51 @@ function updateCompareModel(index, value) {
 
   emitField('compareModels', nextModels)
 }
+
+function openPromptImport(targetKind, index) {
+  promptImportState.visible = true
+  promptImportState.targetKind = targetKind
+  promptImportState.index = index
+}
+
+function closePromptImport() {
+  promptImportState.visible = false
+  promptImportState.targetKind = ''
+  promptImportState.index = -1
+}
+
+function appendPromptTemplate(templatePrompt = '') {
+  const promptText = String(templatePrompt || '').trim()
+  if (!promptText) {
+    closePromptImport()
+    return
+  }
+
+  if (promptImportState.targetKind === 'series-design') {
+    const currentAssignment = seriesAssignments.value[promptImportState.index]
+    if (!currentAssignment) {
+      closePromptImport()
+      return
+    }
+
+    const nextPrompt = [String(currentAssignment.prompt || '').trim(), promptText].filter(Boolean).join('\n')
+    updateAssignment(promptImportState.index, 'prompt', nextPrompt)
+    closePromptImport()
+    return
+  }
+
+  if (promptImportState.targetKind === 'series-generate') {
+    const currentAssignment = seriesGeneratePromptAssignments.value[promptImportState.index]
+    if (!currentAssignment) {
+      closePromptImport()
+      return
+    }
+
+    const nextPrompt = [String(currentAssignment.prompt || '').trim(), promptText].filter(Boolean).join('\n')
+    updateSeriesGenerateAssignment(promptImportState.index, 'prompt', nextPrompt)
+    closePromptImport()
+  }
+}
 </script>
 
 <template>
@@ -161,7 +206,6 @@ function updateCompareModel(index, value) {
     <header class="section-header">
       <div>
         <h2>参数设置</h2>
-        <p class="section-copy">{{ menuLabel }} / {{ menuHint }}</p>
       </div>
     </header>
 
@@ -176,80 +220,7 @@ function updateCompareModel(index, value) {
         />
       </label>
 
-      <template v-if="activeMenu === 'copywriting'">
-        <section class="form-field">
-          <span>参考图片</span>
-          <div class="toggle-row">
-            <button class="icon-action-button" type="button" aria-label="上传参考图片" title="上传参考图片" @click="emit('select-copywriting-images')">
-              <img :src="uploadIconUrl" alt="" />
-            </button>
-            <button class="secondary-action" type="button" @click="emit('clear-copywriting-images')">清空图片</button>
-          </div>
-          <div v-if="copywritingReferenceImages.length" class="asset-chip-list">
-            <article v-for="image in copywritingReferenceImages" :key="image.id || image.name" class="asset-chip">
-              <img v-if="image.preview" :src="image.preview" :alt="image.name" class="asset-chip__preview" />
-              <div class="asset-chip__copy">
-                <strong>{{ image.name }}</strong>
-                <small>{{ image.sizeLabel || '本地图片' }}</small>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <label class="form-field">
-          <span>提示词输入区域</span>
-          <textarea
-            :value="draftForm.prompt"
-            rows="6"
-            placeholder="输入本次文案需求，例如批量生成电商标题、产品介绍或生图提示词"
-            @input="emitField('prompt', $event.target.value)"
-          ></textarea>
-        </label>
-
-        <div class="form-row">
-          <label class="form-field">
-            <span>数量</span>
-            <div class="number-stepper">
-              <button
-                class="stepper-button stepper-button--decrement"
-                type="button"
-                aria-label="减少数量"
-                @click="stepField('quantity', draftForm.quantity, -1, 1, 20)"
-              >
-                <span class="stepper-button__triangle stepper-button__triangle--left"></span>
-              </button>
-              <input
-                :value="draftForm.quantity"
-                class="stepper-value"
-                type="number"
-                min="1"
-                max="20"
-                @input="updateStepperField('quantity', $event.target.value, 1, 20)"
-              />
-              <button
-                class="stepper-button stepper-button--increment"
-                type="button"
-                aria-label="增加数量"
-                @click="stepField('quantity', draftForm.quantity, 1, 1, 20)"
-              >
-                <span class="stepper-button__triangle stepper-button__triangle--right"></span>
-              </button>
-            </div>
-            <small>一次提交只会发起 1 次请求，数量用于要求模型返回多条文案结果。</small>
-          </label>
-
-          <label class="form-field">
-            <span>模型选择</span>
-            <select :value="draftForm.model" @change="emitField('model', $event.target.value)">
-              <option v-for="model in modelOptions" :key="model.value" :value="model.value">
-                {{ model.label }}
-              </option>
-            </select>
-          </label>
-        </div>
-      </template>
-
-      <template v-else-if="activeMenu === 'single-image'">
+      <template v-if="activeMenu === 'single-image'">
         <section class="form-field">
           <span>测试图片</span>
           <div class="toggle-row">
@@ -292,13 +263,11 @@ function updateCompareModel(index, value) {
             <article class="compare-model-lock">
               <span>对比模型 1</span>
               <strong>nano-banana-fast</strong>
-              <small>固定模型，优先用于稳定快速对比</small>
             </article>
 
             <article class="compare-model-lock">
               <span>对比模型 2</span>
               <strong>gpt-image-2</strong>
-              <small>固定模型，作为标准效果参考</small>
             </article>
 
             <label class="form-field compare-model-field">
@@ -339,7 +308,6 @@ function updateCompareModel(index, value) {
               <img :src="uploadIconUrl" alt="" />
             </button>
           </div>
-          <small>不上传图片则直接按文生图处理，上传后自动按图生图处理。</small>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
             <div class="asset-chip__copy">
@@ -432,6 +400,21 @@ function updateCompareModel(index, value) {
               <div class="assignment-card__fields">
                 <strong>{{ assignment.name }}</strong>
                 <label class="form-field">
+                  <span>图片类型</span>
+                  <div class="prompt-import-row">
+                    <select
+                      :value="assignment.imageType || ''"
+                      @change="updateAssignment(index, 'imageType', $event.target.value)"
+                    >
+                      <option value="">请选择图片类型</option>
+                      <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
+                        {{ type }}
+                      </option>
+                    </select>
+                    <button class="secondary-action" type="button" @click="openPromptImport('series-design', index)">导入</button>
+                  </div>
+                </label>
+                <label class="form-field">
                   <span>图片专属提示词</span>
                   <input
                     :value="assignment.prompt"
@@ -473,7 +456,6 @@ function updateCompareModel(index, value) {
               <span class="stepper-button__triangle stepper-button__triangle--right"></span>
             </button>
           </div>
-          <small>示例：选中 3 张图，生成组数为 3，则最终输出 3 组完整套图。</small>
         </label>
       </template>
 
@@ -580,14 +562,30 @@ function updateCompareModel(index, value) {
             <article v-for="(assignment, index) in seriesGeneratePromptAssignments" :key="assignment.id || assignment.index || index" class="assignment-card">
               <div class="assignment-card__body assignment-card__body--prompt-only">
                 <div class="assignment-card__fields">
-                  <strong>{{ `第 ${index + 1} 张` }}</strong>
+                  <div class="form-row">
+                    <strong>{{ `第 ${index + 1} 张` }}</strong>
+                    <label class="form-field">
+                      <span>图片类型</span>
+                      <div class="prompt-import-row">
+                        <select
+                          :value="assignment.imageType || ''"
+                          @change="updateSeriesGenerateAssignment(index, 'imageType', $event.target.value)"
+                        >
+                          <option value="">请选择图片类型</option>
+                          <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
+                            {{ type }}
+                          </option>
+                        </select>
+                        <button class="secondary-action" type="button" @click="openPromptImport('series-generate', index)">导入</button>
+                      </div>
+                    </label>
+                  </div>
                   <label class="form-field">
-                    <span>单独提示词</span>
                     <textarea
                       :value="assignment.prompt"
                       rows="3"
                       :placeholder="`输入第 ${index + 1} 张要生成的具体画面要求`"
-                      @input="updateSeriesGeneratePrompt(index, $event.target.value)"
+                      @input="updateSeriesGenerateAssignment(index, 'prompt', $event.target.value)"
                     ></textarea>
                   </label>
                 </div>
@@ -605,6 +603,36 @@ function updateCompareModel(index, value) {
           </select>
         </label>
       </template>
+    </div>
+
+    <div v-if="promptImportState.visible" class="prompt-import-modal" @click.self="closePromptImport">
+      <div class="prompt-import-modal__card">
+        <div class="prompt-import-modal__header">
+          <div>
+            <strong>请选择要补充的提示词模板</strong>
+            <span class="section-copy">仅展示自定义提示词，点击后会补充到当前提示词</span>
+          </div>
+          <button class="secondary-action" type="button" @click="closePromptImport">关闭</button>
+        </div>
+        <div class="prompt-import-modal__list scrollbar-hidden">
+          <button
+            v-for="template in customPromptTemplates"
+            :key="template.id"
+            class="prompt-import-modal__item"
+            type="button"
+            @click="appendPromptTemplate(template.prompt)"
+          >
+            <strong>{{ template.name }}</strong>
+            <span>{{ template.category }}</span>
+            <small>{{ template.prompt }}</small>
+          </button>
+          <div v-if="!customPromptTemplates.length" class="task-sidebar-empty">
+            <strong>暂无自定义提示词</strong>
+            <p>请先到提示词库中新增自定义模板。</p>
+          </div>
+        </div>
+        <button class="primary-action" type="button" @click="closePromptImport">补充到当前提示词</button>
+      </div>
     </div>
 
     <footer class="panel-footer">

@@ -10,6 +10,39 @@ const SERIES_DESIGN_SOFT_WEIGHT = 12
 const SERIES_DESIGN_HARD_WEIGHT = 20
 const SERIES_GENERATE_SOFT_TOTAL = 8
 const SERIES_GENERATE_HARD_TOTAL = 20
+const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
+const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
+  商品主图: {
+    outputLabel: '主图',
+    templateId: 'product-main',
+    instruction: '按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。'
+  },
+  详情图: {
+    outputLabel: '详情图',
+    templateId: 'product-detail',
+    instruction: '按详情图生成：输出产品详细说明图，强调卖点信息、使用说明、功能结构或场景说明；禁止仅做主视觉海报。'
+  },
+  细节图: {
+    outputLabel: '细节图',
+    templateId: 'product-closeup',
+    instruction: '按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。'
+  },
+  尺寸图: {
+    outputLabel: '尺寸图',
+    templateId: 'product-size',
+    instruction: '按尺寸图生成：输出带尺寸标注的说明图，清晰表达长宽高或关键规格；禁止省略尺寸信息。'
+  },
+  白底图: {
+    outputLabel: '白底图',
+    templateId: 'product-whitebg',
+    instruction: '按白底图生成：输出纯白背景电商图，主体完整清晰、边缘干净；禁止加入场景背景和复杂装饰。'
+  },
+  颜色图: {
+    outputLabel: '颜色图',
+    templateId: 'product-color',
+    instruction: '按颜色图生成：输出产品颜色变化效果图，保持产品结构一致，仅突出颜色差异；禁止改变主体款式。'
+  }
+}
 const DEFAULT_CONCURRENCY = 2
 const MAX_RETRY_COUNT = 2
 
@@ -140,11 +173,77 @@ function normalizeSeriesGeneratePromptAssignments(promptAssignments = [], genera
 
   return Array.from({ length: normalizedGenerateCount }, (_unused, index) => {
     const currentAssignment = sourceAssignments[index] || {}
+    const normalizedImageType = SERIES_GENERATE_IMAGE_TYPE_OPTIONS.includes(currentAssignment.imageType)
+      ? currentAssignment.imageType
+      : ''
 
     return {
       id: currentAssignment.id || `series-generate-${index + 1}`,
       index: index + 1,
-      prompt: String(currentAssignment.prompt || '').trim()
+      prompt: String(currentAssignment.prompt || '').trim(),
+      imageType: normalizedImageType
+    }
+  })
+}
+
+function buildTemplatePromptMap(promptTemplateService) {
+  const templateMap = new Map()
+  if (!promptTemplateService || typeof promptTemplateService.listTemplates !== 'function') {
+    return templateMap
+  }
+
+  for (const template of promptTemplateService.listTemplates()) {
+    templateMap.set(template.id, String(template.prompt || '').trim())
+  }
+
+  return templateMap
+}
+
+function resolveImageTypeInstruction(imageType, templatePromptMap = new Map()) {
+  const config = SERIES_GENERATE_IMAGE_TYPE_CONFIG[imageType]
+  if (!config) {
+    return ''
+  }
+
+  return templatePromptMap.get(config.templateId) || config.instruction
+}
+
+function buildSeriesGenerateOutputDescriptors(promptAssignments = [], templatePromptMap = new Map()) {
+  const typeCounters = new Map()
+
+  return promptAssignments.map((assignment, index) => {
+    const config = SERIES_GENERATE_IMAGE_TYPE_CONFIG[assignment.imageType] || {
+      outputLabel: `第${index + 1}张`,
+      instruction: ''
+    }
+    const currentCount = typeCounters.get(config.outputLabel) || 0
+    typeCounters.set(config.outputLabel, currentCount + 1)
+
+    return {
+      ...assignment,
+      outputTitle: `${config.outputLabel}${currentCount}`,
+      composedPrompt: composePrompt([resolveImageTypeInstruction(assignment.imageType, templatePromptMap), assignment.prompt])
+    }
+  })
+}
+
+function buildSeriesDesignOutputDescriptors(assignments = [], templatePromptMap = new Map()) {
+  const typeCounters = new Map()
+
+  return assignments.map((assignment, index) => {
+    const config = SERIES_GENERATE_IMAGE_TYPE_CONFIG[assignment.imageType] || {
+      outputLabel: assignment.name || `第${index + 1}张`,
+      instruction: ''
+    }
+    const currentCount = typeCounters.get(config.outputLabel) || 0
+    typeCounters.set(config.outputLabel, currentCount + 1)
+
+    return {
+      ...assignment,
+      outputTitle: SERIES_GENERATE_IMAGE_TYPE_CONFIG[assignment.imageType]
+        ? `${config.outputLabel}${currentCount}`
+        : config.outputLabel,
+      composedPrompt: composePrompt([resolveImageTypeInstruction(assignment.imageType, templatePromptMap), assignment.prompt])
     }
   })
 }
@@ -259,6 +358,10 @@ function validateStudioImageTask({ menuKey, draft }) {
       throw new Error('套图设计需要为每一张选中图片填写单独提示词')
     }
 
+    if (selectedAssignments.some((item) => !SERIES_GENERATE_IMAGE_TYPE_OPTIONS.includes(item.imageType))) {
+      throw new Error('套图设计需要为每一张选中图片选择图片类型')
+    }
+
     const taskWeight = selectedAssignments.length * Math.max(1, Number(draft.batchCount) || 1)
     if (taskWeight > SERIES_DESIGN_HARD_WEIGHT) {
       throw new Error(`套图设计当前任务过重，请将“选中图片数 x 批次”控制在 ${SERIES_DESIGN_HARD_WEIGHT} 以内`)
@@ -281,6 +384,10 @@ function validateStudioImageTask({ menuKey, draft }) {
       throw new Error('套图生成需要为每一张图片填写单独提示词')
     }
 
+    if (promptAssignments.some((item) => !item.imageType)) {
+      throw new Error('套图生成需要为每一张图片选择图片类型')
+    }
+
     const totalImageCount = Math.max(1, Number(draft.batchCount) || 1) * Math.max(1, Number(draft.generateCount) || 1)
     if (totalImageCount > SERIES_GENERATE_HARD_TOTAL) {
       throw new Error(`套图生成当前任务过重，请将“生成数量 x 批次”控制在 ${SERIES_GENERATE_HARD_TOTAL} 以内`)
@@ -292,6 +399,7 @@ function createStudioImageGenerationService({
   settingsService,
   messageRecorder,
   runtimeLogger,
+  promptTemplateService = null,
   createHttpClientServiceDependency = createHttpClientService,
   createDrawTaskDependency = createDrawTask,
   getCompletedDrawResultDependency = getCompletedDrawResult,
@@ -479,7 +587,8 @@ function createStudioImageGenerationService({
 
   async function generateSeriesDesignResults({ draft, taskId, outputDirectory, onProgress }) {
     const assignments = Array.isArray(draft.imageAssignments) ? draft.imageAssignments : []
-    const selectedAssignments = assignments.filter((item) => item.selected !== false)
+    const templatePromptMap = buildTemplatePromptMap(promptTemplateService)
+    const selectedAssignments = buildSeriesDesignOutputDescriptors(assignments.filter((item) => item.selected !== false), templatePromptMap)
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const progressReporter = createAggregateProgressReporter({
       totalSubtasks: Math.max(1, selectedAssignments.length * batchCount),
@@ -527,7 +636,7 @@ function createStudioImageGenerationService({
         const completedResult = await executeRemoteImageTask({
           jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
           model: draft.model,
-          prompt: composePrompt([draft.globalPrompt, assignment.prompt]),
+          prompt: composePrompt([draft.globalPrompt, assignment.composedPrompt]),
           aspectRatio: draft.size || '1:1',
           imageSize: resolveImageSize(draft.model),
           filePaths: [sourceFilePath],
@@ -545,7 +654,7 @@ function createStudioImageGenerationService({
           assignmentId: assignment.id,
           output: createSeriesOutputFromSavedImage(savedImage, {
             id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-            title: assignment.name,
+            title: assignment.outputTitle,
             model: draft.model,
             sourceTag: 'generated'
           })
@@ -585,7 +694,9 @@ function createStudioImageGenerationService({
   async function generateSeriesGenerateResults({ draft, taskId, outputDirectory, onProgress }) {
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const promptAssignments = normalizeSeriesGeneratePromptAssignments(draft.promptAssignments, draft.generateCount)
-    const generateCount = promptAssignments.length
+    const templatePromptMap = buildTemplatePromptMap(promptTemplateService)
+    const outputDescriptors = buildSeriesGenerateOutputDescriptors(promptAssignments, templatePromptMap)
+    const generateCount = outputDescriptors.length
     const totalImageCount = batchCount * generateCount
     const progressReporter = createAggregateProgressReporter({
       totalSubtasks: Math.max(1, totalImageCount),
@@ -606,12 +717,12 @@ function createStudioImageGenerationService({
     const groupedResults = []
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
-      const outputs = await mapWithConcurrency(promptAssignments, async (promptAssignment, outputIndex) => {
+      const outputs = await mapWithConcurrency(outputDescriptors, async (promptAssignment, outputIndex) => {
         const subtaskIndex = (batchIndex * generateCount) + outputIndex
         const completedResult = await executeRemoteImageTask({
           jobLabel: `series-generate-${batchIndex + 1}-${outputIndex + 1}`,
           model: draft.model,
-          prompt: composePrompt([draft.globalPrompt, promptAssignment.prompt]),
+          prompt: composePrompt([draft.globalPrompt, promptAssignment.composedPrompt]),
           aspectRatio: draft.size || '1:1',
           imageSize: resolveImageSize(draft.model),
           filePaths: [sourceFilePath],
@@ -627,7 +738,7 @@ function createStudioImageGenerationService({
 
         return createSeriesOutputFromSavedImage(savedImage, {
           id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
-          title: `第 ${outputIndex + 1} 张`,
+          title: promptAssignment.outputTitle,
           model: draft.model,
           sourceTag: 'generated'
         })

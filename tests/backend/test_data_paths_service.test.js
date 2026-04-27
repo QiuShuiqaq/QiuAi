@@ -17,7 +17,7 @@ describe('dataPathsService', () => {
     expect(getFeatureDirectoryKey('single-design')).toBe('single-design')
     expect(getFeatureDirectoryKey('style-batch')).toBe('series-design')
     expect(getFeatureDirectoryKey('detail-set')).toBe('series-generate')
-    expect(getFeatureDirectoryKey('copywriting')).toBe('copywriting')
+    expect(getFeatureDirectoryKey('copywriting')).toBe('single-image')
 
     const directories = getTaskDataDirectories({
       featureKey: 'series-design',

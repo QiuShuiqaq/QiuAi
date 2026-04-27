@@ -40,4 +40,31 @@ describe('httpClientService', () => {
     }))
     expect(response.data.data.id).toBe('task-1')
   })
+
+  it('passes a custom timeout to the axios client when provided', async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: {
+        code: 0
+      }
+    })
+    const requestClient = vi.fn(() => ({
+      post
+    }))
+
+    const { createHttpClientService } = await import('../../main/src/services/httpClientService.js')
+    const httpClient = createHttpClientService({
+      apiBaseUrl: 'https://grsai.dakka.com.cn',
+      apiKey: 'sk-test',
+      requestClient,
+      timeoutMs: 120000
+    })
+
+    await httpClient.post('/v1/chat/completions', {
+      model: 'gemini-3-pro'
+    })
+
+    expect(requestClient).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 120000
+    }))
+  })
 })

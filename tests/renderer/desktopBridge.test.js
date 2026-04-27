@@ -111,13 +111,13 @@ describe('desktopBridge', () => {
     const { deleteStudioExportItem } = await import('../../renderer/src/services/desktopBridge.js')
 
     await deleteStudioExportItem({
-      menuKey: 'copywriting',
-      exportItemId: 'copy-export-folder-1'
+      menuKey: 'single-image',
+      exportItemId: 'single-export-folder-1'
     })
 
     expect(invoke).toHaveBeenCalledWith('studio:delete-export-item', {
-      menuKey: 'copywriting',
-      exportItemId: 'copy-export-folder-1'
+      menuKey: 'single-image',
+      exportItemId: 'single-export-folder-1'
     })
   })
 })

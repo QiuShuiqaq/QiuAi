@@ -18,6 +18,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  rechargePricingCatalog: {
+    type: Array,
+    required: true
+  },
   latestTask: {
     type: Object,
     default: null
@@ -25,7 +29,6 @@ const props = defineProps({
 })
 
 const showModelPricing = computed(() => props.activeMenu === 'model-pricing')
-const showCopywriting = computed(() => props.activeMenu === 'copywriting')
 const showSingleImage = computed(() => props.activeMenu === 'single-image')
 const showSingleDesign = computed(() => props.activeMenu === 'single-design')
 const showSeriesDesign = computed(() => props.activeMenu === 'series-design')
@@ -110,7 +113,6 @@ function closePreview() {
 // 模型价格主区示例：
 // gpt-image-2
 // 3000 / 次
-// ¥0.15~¥0.3 / 次
 </script>
 
 <template>
@@ -145,12 +147,20 @@ function closePreview() {
       </section>
 
       <section v-if="showModelPricing" class="result-text-block">
+        <h3 class="section-title section-title--centered">积分充值</h3>
+        <div class="recharge-price-grid">
+          <article v-for="item in rechargePricingCatalog" :key="`${item.price}-${item.credits}`" class="recharge-price-card">
+            <span v-if="item.bonus" class="recharge-price-card__ribbon">{{ item.bonus }}</span>
+            <strong>{{ item.price }}</strong>
+            <span>{{ item.credits }}</span>
+          </article>
+        </div>
+
         <h3>模型价格卡片</h3>
         <div class="model-price-grid">
           <article v-for="model in modelPricingCatalog" :key="model.name" class="model-price-card">
             <strong>{{ model.name }}</strong>
             <span>{{ model.credits }}</span>
-            <span>{{ model.price }}</span>
           </article>
         </div>
       </section>
@@ -159,14 +169,6 @@ function closePreview() {
         <strong>空状态占位</strong>
         <p>当前模块还没有结果返回，这里保留文本或图片结果渲染位。</p>
       </div>
-
-      <section v-if="showCopywriting && resultPayload.textResults?.length" class="result-text-block">
-        <h3>文本结果</h3>
-        <article v-for="text in resultPayload.textResults" :key="text.id" class="text-result-card">
-          <strong>{{ text.title }}</strong>
-          <p>{{ text.content }}</p>
-        </article>
-      </section>
 
       <section v-if="showSingleImage && resultPayload.comparisonResults?.length" class="result-image-block">
         <h3>四模型效果对比</h3>
