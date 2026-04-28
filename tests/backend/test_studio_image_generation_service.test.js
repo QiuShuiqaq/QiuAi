@@ -330,7 +330,7 @@ describe('studioImageGenerationService', () => {
         if (startedJobIds.length >= targetCount) {
           return
         }
-        await Promise.resolve()
+        await new Promise((resolve) => setImmediate(resolve))
       }
 
       throw new Error(`Timed out waiting for started jobs: expected at least ${targetCount}, got ${startedJobIds.length}`)
