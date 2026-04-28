@@ -323,6 +323,18 @@ describe('studioImageGenerationService', () => {
         resolve
       }
     }
+    async function waitForStartedJobsAtLeast(targetCount, {
+      maxTicks = 1000
+    } = {}) {
+      for (let tick = 0; tick < maxTicks; tick += 1) {
+        if (startedJobIds.length >= targetCount) {
+          return
+        }
+        await Promise.resolve()
+      }
+
+      throw new Error(`Timed out waiting for started jobs: expected at least ${targetCount}, got ${startedJobIds.length}`)
+    }
 
     let startedCount = 0
     let completedCount = 0
@@ -398,10 +410,7 @@ describe('studioImageGenerationService', () => {
     })
     const totalJobs = generateCount * batchCount
     for (let index = 0; index < totalJobs; index += 1) {
-      while (startedJobIds.length <= index) {
-        await Promise.resolve()
-      }
-
+      await waitForStartedJobsAtLeast(index + 1)
       completionGates.get(startedJobIds[index])?.resolve()
       await Promise.resolve()
     }
