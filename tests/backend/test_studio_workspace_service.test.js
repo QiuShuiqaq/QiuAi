@@ -931,7 +931,7 @@ describe('studioWorkspaceService', () => {
 
     const task = service.getSnapshot().tasks.find((item) => item.id === createdTask.id)
     expect(task).toBeTruthy()
-    // Intentional lock-test failure until Task 3 adds grouped progress metadata to task snapshots.
+    // Intentional lock-test failure until grouped progress metadata is implemented in task snapshots.
     expect(task.groupImageCount).toBe(20)
     expect(task.totalSubtaskCount).toBe(20)
     expect(task.completedSubtaskCount).toBe(20)
