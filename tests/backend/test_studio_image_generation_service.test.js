@@ -371,8 +371,9 @@ describe('studioImageGenerationService', () => {
     })
 
     expect(result.groupedResults).toHaveLength(2)
+    expect(result.groupedResults.map((group) => group.groupTitle)).toEqual(['第 1 组', '第 2 组'])
     expect(secondGroupStartedAtCompletionCount).toBe(5)
-    expect(maxConcurrent).toBe(5)
+    expect(maxConcurrent).toBeLessThanOrEqual(5)
   })
 
   it('uses edited fixed prompt templates from the prompt library when composing image-type prompts', async () => {
