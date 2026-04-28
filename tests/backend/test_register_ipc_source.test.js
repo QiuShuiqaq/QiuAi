@@ -15,5 +15,7 @@ describe('registerIpc source', () => {
     expect(source).toContain('registerPromptIpc(')
     expect(source).toContain('registerTaskIpc(')
     expect(source).toContain('registerStudioIpc(')
+    expect(source).toContain('return {')
+    expect(source).toContain('studioTaskManagerService')
   })
 })

@@ -108,6 +108,12 @@ describe('component sources', () => {
     expect(exportSource).toContain('export-item__actions')
     expect(exportSource).toContain('export-download-button')
     expect(exportSource).toContain('scrollbar-hidden')
+    expect(exportSource).toContain('const pageSize = 8')
+    expect(exportSource).toContain('pagedExportItems')
+    expect(exportSource).toContain('totalPages')
+    expect(exportSource).toContain('export-pagination')
+    expect(exportSource).toContain('上一页')
+    expect(exportSource).toContain('下一页')
 
     expect(dashboardSource).not.toContain('文案生成统计')
     expect(dashboardSource).toContain('单图测试统计')

@@ -3,6 +3,7 @@ const fsSync = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const os = require('node:os')
+const { pathToFileURL } = require('node:url')
 const { exportTaskDirectory: defaultExportTaskDirectory } = require('./taskExportService')
 const { createStudioImageGenerationService, normalizeSingleImageModels } = require('./studioImageGenerationService')
 const {
@@ -246,15 +247,57 @@ function normalizeDraftForMenu(menuKey, draft = {}) {
 function formatDisplayDateTime(dateValue) {
   const date = new Date(dateValue)
   const parts = [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, '0'),
-    String(date.getUTCDate()).padStart(2, '0')
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
   ]
   const timeParts = [
-    String(date.getUTCHours()).padStart(2, '0'),
-    String(date.getUTCMinutes()).padStart(2, '0')
+    String(date.getHours()).padStart(2, '0'),
+    String(date.getMinutes()).padStart(2, '0')
   ]
   return `${parts.join('-')} ${timeParts.join(':')}`
+}
+
+function createPreviewUrlFromSavedPath(savedPath = '') {
+  if (!savedPath) {
+    return ''
+  }
+
+  try {
+    return pathToFileURL(path.resolve(savedPath)).href
+  } catch {
+    return ''
+  }
+}
+
+function hydratePreviewForDisplay(item = {}) {
+  return {
+    ...item,
+    preview: item.preview || createPreviewUrlFromSavedPath(item.savedPath)
+  }
+}
+
+function hydrateResultPayloadForDisplay(resultPayload = {}) {
+  return {
+    ...resultPayload,
+    comparisonResults: Array.isArray(resultPayload.comparisonResults)
+      ? resultPayload.comparisonResults.map((item) => hydratePreviewForDisplay(item))
+      : [],
+    groupedResults: Array.isArray(resultPayload.groupedResults)
+      ? resultPayload.groupedResults.map((group) => ({
+          ...group,
+          outputs: Array.isArray(group.outputs)
+            ? group.outputs.map((item) => hydratePreviewForDisplay(item))
+            : []
+        }))
+      : []
+  }
+}
+
+function hydrateResultsByMenuForDisplay(resultsByMenu = {}) {
+  return Object.fromEntries(Object.entries(resultsByMenu).map(([menuKey, resultPayload]) => {
+    return [menuKey, hydrateResultPayloadForDisplay(resultPayload)]
+  }))
 }
 
 function createDefaultDrafts() {
@@ -737,6 +780,12 @@ async function saveStudioResults({
   writeFile = fs.writeFile
 }) {
   const exportItems = []
+  const persistedResultPayload = {
+    ...resultPayload,
+    textResults: Array.isArray(resultPayload.textResults) ? resultPayload.textResults.slice() : [],
+    comparisonResults: [],
+    groupedResults: []
+  }
   const folderBaseName = resolveTaskFolderBaseName({
     draft,
     menuKey,
@@ -785,7 +834,14 @@ async function saveStudioResults({
         if (path.resolve(savedPath) !== path.resolve(targetPath)) {
           await fs.copyFile(savedPath, targetPath)
         }
+        savedPath = targetPath
       }
+
+      persistedResultPayload.comparisonResults.push({
+        ...image,
+        preview: '',
+        savedPath
+      })
     }
 
     exportItems.push(createFolderExportItem({
@@ -801,6 +857,10 @@ async function saveStudioResults({
     const folderName = `${folderBaseName}${groupIndex}`
     const groupDirectory = path.resolve(outputDirectory, folderName)
     await ensureDirectory(groupDirectory)
+    const persistedGroup = {
+      ...group,
+      outputs: []
+    }
 
     for (const [index, output] of (group.outputs || []).entries()) {
       let savedPath = ''
@@ -818,7 +878,15 @@ async function saveStudioResults({
       } else {
         continue
       }
+
+      persistedGroup.outputs.push({
+        ...output,
+        preview: '',
+        savedPath
+      })
     }
+
+    persistedResultPayload.groupedResults.push(persistedGroup)
 
     exportItems.push(createFolderExportItem({
       id: `${group.id}-export-folder`,
@@ -844,7 +912,10 @@ async function saveStudioResults({
     }))
   }
 
-  return exportItems
+  return {
+    exportItems,
+    persistedResultPayload
+  }
 }
 
 function resolveInputCount(menuKey, draft) {
@@ -1128,6 +1199,8 @@ function createStudioWorkspaceService({
   removeDirectory = (targetPath) => fs.rm(targetPath, { recursive: true, force: true }),
   readdirSync = fsSync.readdirSync,
   statSync = fsSync.statSync,
+  getNowMs = () => Date.now(),
+  exportScanCacheTtlMs = 3000,
   exportTaskDirectory: exportTaskDirectoryDependency = defaultExportTaskDirectory,
   generateImageResults,
   taskManagerService
@@ -1142,6 +1215,15 @@ function createStudioWorkspaceService({
   const queuedTaskExecutions = []
   let isTaskQueueRunning = false
   let taskQueuePromise = Promise.resolve()
+  let cachedExportItemsByMenu = null
+  let cachedExportItemsAt = 0
+  let isExportItemsCacheDirty = true
+
+  function invalidateExportItemsCache() {
+    cachedExportItemsByMenu = null
+    cachedExportItemsAt = 0
+    isExportItemsCacheDirty = true
+  }
 
   async function persistTaskAndState({
     task,
@@ -1177,6 +1259,10 @@ function createStudioWorkspaceService({
         : latestState.exportItemsByMenu,
       tasks: nextTasks
     })
+
+    if (exportItemsByMenuPatch) {
+      invalidateExportItemsCache()
+    }
 
     if (taskManagerService && typeof taskManagerService.saveTask === 'function') {
       await taskManagerService.saveTask(task)
@@ -1315,7 +1401,10 @@ function createStudioWorkspaceService({
         generateImageResults: generateImageResultsDependency,
         onProgress: handleTaskProgress
       })
-      const exportItems = await saveStudioResults({
+      const {
+        exportItems,
+        persistedResultPayload
+      } = await saveStudioResults({
         menuKey,
         taskId,
         draft: preparedDraft,
@@ -1327,7 +1416,7 @@ function createStudioWorkspaceService({
       const enrichedResultPayload = enrichResultPayloadSummary({
         menuKey,
         draft: preparedDraft,
-        resultPayload,
+        resultPayload: persistedResultPayload,
         elapsedMilliseconds: executionCompletedAt - executionStartedAt
       })
       const completedTask = buildTaskSummary({
@@ -1431,11 +1520,24 @@ function createStudioWorkspaceService({
   }
 
   function getResolvedExportItemsByMenu(state = getStoredState()) {
-    const scannedExportItemsByMenu = scanStoredExportItemsByMenu({
-      outputRootDirectory,
-      readdirSync,
-      statSync
-    })
+    const now = getNowMs()
+    const shouldReuseCache = !isExportItemsCacheDirty &&
+      cachedExportItemsByMenu &&
+      now - cachedExportItemsAt <= exportScanCacheTtlMs
+
+    const scannedExportItemsByMenu = shouldReuseCache
+      ? cachedExportItemsByMenu
+      : scanStoredExportItemsByMenu({
+          outputRootDirectory,
+          readdirSync,
+          statSync
+        })
+
+    if (!shouldReuseCache) {
+      cachedExportItemsByMenu = scannedExportItemsByMenu
+      cachedExportItemsAt = now
+      isExportItemsCacheDirty = false
+    }
 
     return mergeExportItemsByMenu({
       scannedExportItemsByMenu,
@@ -1461,7 +1563,7 @@ function createStudioWorkspaceService({
       imageModelOptions,
       modelPricingCatalog,
       formDrafts: state.formDrafts,
-      resultsByMenu: state.resultsByMenu,
+      resultsByMenu: hydrateResultsByMenuForDisplay(state.resultsByMenu),
       exportItemsByMenu,
       tasks,
       workspaceDashboard: buildWorkspaceDashboard(derivedState, tasks),
@@ -1576,6 +1678,7 @@ function createStudioWorkspaceService({
         })
       }
     })
+    invalidateExportItemsCache()
 
     await safeRuntimeLog(runtimeLogger, {
       level: 'info',

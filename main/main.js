@@ -6,8 +6,10 @@ const registerIpc = require('./src/bootstrap/registerIpc')
 async function bootstrap () {
   await app.whenReady()
   app.setAppUserModelId('com.qiuai.desktop')
-  registerIpc()
-  registerAppEvents(createMainWindow)
+  const { studioTaskManagerService } = registerIpc()
+  registerAppEvents(createMainWindow, {
+    onBeforeQuit: () => studioTaskManagerService?.flushPendingWrites?.()
+  })
   createMainWindow()
 }
 

@@ -62,6 +62,12 @@ function registerIpc () {
     runtimeLogger: dataTraceService
   })
   registerStudioIpc({ studioWorkspaceService })
+
+  return {
+    studioTaskManagerService,
+    studioWorkspaceService,
+    taskRunnerService
+  }
 }
 
 module.exports = registerIpc

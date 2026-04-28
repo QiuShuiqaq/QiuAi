@@ -114,6 +114,7 @@ let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
 let isRefreshingStudioRuntime = false
+const draftPersistTimers = new Map()
 
 function resolveDefaultModelForMenu() {
   return imageModelOptions[0].value
@@ -291,6 +292,34 @@ function replaceDraft(menuKey, nextDraft) {
   }
 }
 
+function upsertTaskIntoState(task) {
+  if (!task || !task.id) {
+    return
+  }
+
+  tasks.value = [
+    task,
+    ...tasks.value.filter((item) => item.id !== task.id)
+  ]
+}
+
+function clearDraftPersistTimer(menuKey) {
+  const existingTimer = draftPersistTimers.get(menuKey)
+  if (!existingTimer) {
+    return
+  }
+
+  clearTimeout(existingTimer)
+  draftPersistTimers.delete(menuKey)
+}
+
+function clearAllDraftPersistTimers() {
+  for (const timer of draftPersistTimers.values()) {
+    clearTimeout(timer)
+  }
+  draftPersistTimers.clear()
+}
+
 function clearSubmitButtonStateTimer() {
   if (submitButtonStateTimer) {
     clearTimeout(submitButtonStateTimer)
@@ -373,6 +402,10 @@ const sortedTasks = computed(() => {
   return [...tasks.value].sort((left, right) => {
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
   })
+})
+
+const hasActiveStudioTasks = computed(() => {
+  return sortedTasks.value.some((task) => ['等待中', '进行中'].includes(task.status))
 })
 
 const latestTaskForActiveMenu = computed(() => {
@@ -512,6 +545,7 @@ function ensureDraftForMenu(menuKey) {
 
 async function resetDraftForMenu(menuKey) {
   ensureDraftForMenu(menuKey)
+  clearDraftPersistTimer(menuKey)
   revokeDraftPreviews(formDrafts.value[menuKey] || {})
   const nextDraft = createDraftForm(menuKey)
   replaceDraft(menuKey, nextDraft)
@@ -539,6 +573,15 @@ async function persistDraftPatch(menuKey, patch) {
   }
 }
 
+function scheduleDraftPersist(menuKey, patch) {
+  clearDraftPersistTimer(menuKey)
+  const timer = window.setTimeout(() => {
+    draftPersistTimers.delete(menuKey)
+    void persistDraftPatch(menuKey, patch)
+  }, 320)
+  draftPersistTimers.set(menuKey, timer)
+}
+
 function handleFieldUpdate({ field, value }) {
   ensureDraftForMenu(activeMenu.value)
   const currentDraft = currentDraftForm.value
@@ -564,7 +607,7 @@ function handleFieldUpdate({ field, value }) {
   }
 
   replaceDraft(activeMenu.value, nextDraft)
-  void persistDraftPatch(activeMenu.value, nextDraft)
+  scheduleDraftPersist(activeMenu.value, nextDraft)
 }
 
 function handleOpenSingleImagePicker() {
@@ -586,7 +629,7 @@ function handleSelectSingleImage(event) {
   }
 
   replaceDraft('single-image', nextDraft)
-  void persistDraftPatch('single-image', {
+  scheduleDraftPersist('single-image', {
     sourceImage
   })
   event.target.value = ''
@@ -611,7 +654,7 @@ function handleSelectSingleDesignImage(event) {
   }
 
   replaceDraft('single-design', nextDraft)
-  void persistDraftPatch('single-design', {
+  scheduleDraftPersist('single-design', {
     sourceImage
   })
   event.target.value = ''
@@ -651,7 +694,7 @@ function handleSelectSeriesDesignImages(event) {
   }
 
   replaceDraft('series-design', nextDraft)
-  void persistDraftPatch('series-design', {
+  scheduleDraftPersist('series-design', {
     imageAssignments
   })
   event.target.value = ''
@@ -676,7 +719,7 @@ function handleSelectSeriesGenerateImage(event) {
   }
 
   replaceDraft('series-generate', nextDraft)
-  void persistDraftPatch('series-generate', {
+  scheduleDraftPersist('series-generate', {
     sourceImage
   })
   event.target.value = ''
@@ -798,12 +841,13 @@ async function handleSubmitTask() {
 
   try {
     setSubmitButtonState('submitting')
-    await createStudioTask({
+    clearDraftPersistTimer(activeMenu.value)
+    const createdTask = await createStudioTask({
       menuKey: activeMenu.value,
       draft: formDrafts.value[activeMenu.value]
     })
+    upsertTaskIntoState(createdTask)
     selectedExportIds.value = []
-    await loadStudioSnapshot()
     await resetActiveDraftAfterSubmit()
     setSubmitButtonState('success')
     showActionFeedback({
@@ -811,6 +855,7 @@ async function handleSubmitTask() {
       title: '成功',
       message: '任务已提交并加入任务队列'
     })
+    void refreshStudioRuntimeState()
   } catch (error) {
     console.error('Failed to submit studio task', error)
     setSubmitButtonState('idle')
@@ -1033,6 +1078,9 @@ onMounted(() => {
   void loadStudioSnapshot()
   void loadPromptTemplateState()
   studioRuntimePollTimer = window.setInterval(() => {
+    if (!hasActiveStudioTasks.value) {
+      return
+    }
     void refreshStudioRuntimeState()
   }, 3000)
 })
@@ -1044,6 +1092,7 @@ onBeforeUnmount(() => {
     clearInterval(studioRuntimePollTimer)
     studioRuntimePollTimer = null
   }
+  clearAllDraftPersistTimers()
   Object.values(formDrafts.value).forEach((draft) => {
     revokeDraftPreviews(draft || {})
   })

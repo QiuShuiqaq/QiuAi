@@ -22,6 +22,8 @@ describe('App source', () => {
     expect(source).toContain('app-notice-layer')
     expect(source).toContain('成功')
     expect(source).toContain('失败')
+    expect(source).toContain('scheduleDraftPersist')
+    expect(source).toContain('hasActiveStudioTasks')
     expect(source).toContain('resetDraftForMenu')
     expect(source).toContain('resetActiveDraftAfterSubmit')
   })
@@ -177,5 +179,14 @@ describe('App source', () => {
     expect(source).toContain('const matchedTask = sortedTasks.value.find((task) => task.menuKey === activeMenu.value)')
     expect(source).toContain('return matchedTask || null')
     expect(source).not.toContain('return matchedTask || sortedTasks.value[0] || null')
+  })
+
+  it('optimistically updates queued task state after submit instead of waiting on a full snapshot refresh', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
+
+    expect(source).toContain('function upsertTaskIntoState(task)')
+    expect(source).toContain('const createdTask = await createStudioTask({')
+    expect(source).toContain('upsertTaskIntoState(createdTask)')
+    expect(source).toContain('void refreshStudioRuntimeState()')
   })
 })

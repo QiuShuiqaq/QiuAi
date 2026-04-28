@@ -27,11 +27,32 @@ function createStudioTaskManagerService({
   taskManagerFilePath = TASK_MANAGER_FILE_PATH,
   ensureDirectory: ensureDirectoryDependency = ensureDirectory,
   readFileSync = fs.readFileSync,
-  writeFile = fsPromises.writeFile
+  writeFile = fsPromises.writeFile,
+  persistDebounceMs = 120,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout
 } = {}) {
   let cachedTasks = readTaskListFromDisk(taskManagerFilePath, {
     readFileSync
   })
+  let flushTimer = null
+  let pendingWriteDeferred = null
+  let pendingWritePromise = Promise.resolve()
+
+  function createDeferred() {
+    let resolve
+    let reject
+    const promise = new Promise((innerResolve, innerReject) => {
+      resolve = innerResolve
+      reject = innerReject
+    })
+
+    return {
+      promise,
+      resolve,
+      reject
+    }
+  }
 
   function listTasks() {
     return sortTasks(cachedTasks)
@@ -45,20 +66,56 @@ function createStudioTaskManagerService({
     return normalizedTasks
   }
 
+  function schedulePersist() {
+    if (!pendingWriteDeferred) {
+      pendingWriteDeferred = createDeferred()
+      pendingWritePromise = pendingWriteDeferred.promise
+    }
+
+    if (flushTimer) {
+      clearTimeoutFn(flushTimer)
+      flushTimer = null
+    }
+
+    flushTimer = setTimeoutFn(async () => {
+      const currentDeferred = pendingWriteDeferred
+      flushTimer = null
+      pendingWriteDeferred = null
+
+      try {
+        const normalizedTasks = await persistTasks(cachedTasks)
+        currentDeferred?.resolve(normalizedTasks)
+      } catch (error) {
+        currentDeferred?.reject(error)
+      }
+    }, persistDebounceMs)
+
+    return pendingWritePromise
+  }
+
+  async function flushPendingWrites() {
+    if (!flushTimer && !pendingWriteDeferred) {
+      return listTasks()
+    }
+
+    return pendingWritePromise
+  }
+
   async function saveTask(task = {}) {
-    const nextTasks = [
+    cachedTasks = [
       task,
       ...cachedTasks.filter((item) => item.id !== task.id)
     ]
+    void schedulePersist().catch(() => {})
 
-    await persistTasks(nextTasks)
     return task
   }
 
   return {
     taskManagerFilePath,
     listTasks,
-    saveTask
+    saveTask,
+    flushPendingWrites
   }
 }
 

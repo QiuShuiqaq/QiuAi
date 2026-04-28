@@ -780,4 +780,85 @@ describe('studioWorkspaceService', () => {
       await fs.rm(outputRootDirectory, { recursive: true, force: true })
     }
   })
+
+  it('stores lightweight result state without persisting data url previews', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async ({ taskId }) => ({
+        textResults: [],
+        comparisonResults: [
+          {
+            id: `${taskId}-single-1`,
+            model: 'gpt-image-2',
+            title: '单图设计结果',
+            preview: createPreviewDataUrl('lightweight-preview')
+          }
+        ],
+        groupedResults: [],
+        summary: {
+          title: '单图设计',
+          description: '轻量状态测试'
+        }
+      }),
+      createId: () => 'studio-lightweight-1',
+      getNow: () => '2026-04-29T02:30:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        model: 'gpt-image-2',
+        taskName: 'LightweightA',
+        prompt: '请生成一张高质量商品主图'
+      }
+    })
+
+    await service.createTask({
+      menuKey: 'single-design'
+    })
+    await service.waitForIdle()
+
+    const persistedState = store.get('studioWorkspace', {})
+    const persistedResult = persistedState.resultsByMenu?.['single-design']?.comparisonResults?.[0]
+    const snapshotResult = service.getSnapshot().resultsByMenu['single-design'].comparisonResults[0]
+
+    expect(persistedResult.savedPath).toContain('LightweightA0')
+    expect(persistedResult.preview || '').toBe('')
+    expect(JSON.stringify(persistedState)).not.toContain('data:image/png;base64')
+    expect(snapshotResult.preview).toMatch(/^file:/)
+  })
+
+  it('caches export directory scans between adjacent snapshot reads', async () => {
+    const store = createMemoryStore()
+    const readdirSync = vi.fn(() => [])
+    const statSync = vi.fn(() => null)
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      readdirSync,
+      statSync,
+      getNowMs: () => 1000
+    })
+
+    service.getSnapshot()
+    service.getSnapshot()
+
+    expect(readdirSync).toHaveBeenCalledTimes(4)
+  })
 })
