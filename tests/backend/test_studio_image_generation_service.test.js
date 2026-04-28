@@ -312,24 +312,33 @@ describe('studioImageGenerationService', () => {
     let completedCount = 0
     let activeCount = 0
     let maxConcurrent = 0
+    const startedJobIds = []
+    const finishedJobIds = []
     let secondGroupStartedAtCompletionCount = -1
+    let activeBeforeSecondGroupStart = -1
+    let finishedBeforeSecondGroupStart = []
 
     const createDrawTaskDependency = vi.fn(async () => {
       startedCount += 1
+      const remoteId = `remote-${startedCount}`
+      startedJobIds.push(remoteId)
+      if (startedCount === 6) {
+        secondGroupStartedAtCompletionCount = completedCount
+        activeBeforeSecondGroupStart = activeCount
+        finishedBeforeSecondGroupStart = finishedJobIds.slice()
+      }
       activeCount += 1
       maxConcurrent = Math.max(maxConcurrent, activeCount)
-      if (startedCount === 6 && secondGroupStartedAtCompletionCount < 0) {
-        secondGroupStartedAtCompletionCount = completedCount
-      }
 
       return {
-        id: `remote-${startedCount}`
+        id: remoteId
       }
     })
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
       await new Promise((resolve) => setTimeout(resolve, 5))
       activeCount -= 1
       completedCount += 1
+      finishedJobIds.push(id)
 
       return {
         id,
@@ -373,6 +382,8 @@ describe('studioImageGenerationService', () => {
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults.map((group) => group.groupTitle)).toEqual(['第 1 组', '第 2 组'])
     expect(secondGroupStartedAtCompletionCount).toBe(5)
+    expect(activeBeforeSecondGroupStart).toBe(0)
+    expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, 5))
     expect(maxConcurrent).toBeLessThanOrEqual(5)
   })
 
