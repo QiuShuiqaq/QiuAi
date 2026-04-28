@@ -308,12 +308,29 @@ describe('studioImageGenerationService', () => {
   })
 
   it('runs series-generate groups serially with at most 5 concurrent jobs per group', async () => {
+    const generateCount = 5
+    const batchCount = 2
+    const firstGroupSize = generateCount
+    const firstSecondGroupStartIndex = firstGroupSize + 1
+    function createDeferred() {
+      let resolve
+      const promise = new Promise((resolver) => {
+        resolve = resolver
+      })
+
+      return {
+        promise,
+        resolve
+      }
+    }
+
     let startedCount = 0
     let completedCount = 0
     let activeCount = 0
     let maxConcurrent = 0
     const startedJobIds = []
     const finishedJobIds = []
+    const completionGates = new Map()
     let secondGroupStartedAtCompletionCount = -1
     let activeBeforeSecondGroupStart = -1
     let finishedBeforeSecondGroupStart = []
@@ -322,7 +339,8 @@ describe('studioImageGenerationService', () => {
       startedCount += 1
       const remoteId = `remote-${startedCount}`
       startedJobIds.push(remoteId)
-      if (startedCount === 6) {
+      completionGates.set(remoteId, createDeferred())
+      if (startedCount === firstSecondGroupStartIndex) {
         secondGroupStartedAtCompletionCount = completedCount
         activeBeforeSecondGroupStart = activeCount
         finishedBeforeSecondGroupStart = finishedJobIds.slice()
@@ -335,7 +353,7 @@ describe('studioImageGenerationService', () => {
       }
     })
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
-      await new Promise((resolve) => setTimeout(resolve, 5))
+      await completionGates.get(id)?.promise
       activeCount -= 1
       completedCount += 1
       finishedJobIds.push(id)
@@ -357,7 +375,7 @@ describe('studioImageGenerationService', () => {
       getCompletedDrawResultDependency
     })
 
-    const result = await service.generateImageResults({
+    const resultPromise = service.generateImageResults({
       menuKey: 'series-generate',
       taskId: 'task-series-generate-group-order',
       outputDirectory: 'C:/output',
@@ -368,9 +386,9 @@ describe('studioImageGenerationService', () => {
           path: 'C:/input/main.png'
         },
         globalPrompt: '统一高级电商详情页风格',
-        generateCount: 5,
-        batchCount: 2,
-        promptAssignments: Array.from({ length: 5 }, (_unused, index) => ({
+        generateCount,
+        batchCount,
+        promptAssignments: Array.from({ length: generateCount }, (_unused, index) => ({
           index: index + 1,
           prompt: `提示词-${index + 1}`,
           imageType: '商品主图'
@@ -378,12 +396,22 @@ describe('studioImageGenerationService', () => {
         size: '1:1'
       }
     })
+    const totalJobs = generateCount * batchCount
+    for (let index = 0; index < totalJobs; index += 1) {
+      while (startedJobIds.length <= index) {
+        await Promise.resolve()
+      }
 
-    expect(result.groupedResults).toHaveLength(2)
+      completionGates.get(startedJobIds[index])?.resolve()
+      await Promise.resolve()
+    }
+    const result = await resultPromise
+
+    expect(result.groupedResults).toHaveLength(batchCount)
     expect(result.groupedResults.map((group) => group.groupTitle)).toEqual(['第 1 组', '第 2 组'])
-    expect(secondGroupStartedAtCompletionCount).toBe(5)
+    expect(secondGroupStartedAtCompletionCount).toBe(firstGroupSize)
     expect(activeBeforeSecondGroupStart).toBe(0)
-    expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, 5))
+    expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, firstGroupSize))
     expect(maxConcurrent).toBeLessThanOrEqual(5)
   })
 

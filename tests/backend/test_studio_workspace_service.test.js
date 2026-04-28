@@ -924,12 +924,13 @@ describe('studioWorkspaceService', () => {
       }
     })
 
-    await service.createTask({
+    const createdTask = await service.createTask({
       menuKey: 'series-generate'
     })
     await service.waitForIdle()
 
-    const task = service.getSnapshot().tasks[0]
+    const task = service.getSnapshot().tasks.find((item) => item.id === createdTask.id)
+    expect(task).toBeTruthy()
     expect(task.groupImageCount).toBe(20)
     expect(task.totalSubtaskCount).toBe(20)
     expect(task.completedSubtaskCount).toBe(20)
