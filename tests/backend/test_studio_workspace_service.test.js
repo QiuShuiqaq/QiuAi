@@ -861,4 +861,81 @@ describe('studioWorkspaceService', () => {
 
     expect(readdirSync).toHaveBeenCalledTimes(4)
   })
+
+  it('stores grouped task progress metadata for series tasks', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async () => ({
+        textResults: [],
+        comparisonResults: [],
+        groupedResults: [
+          {
+            id: 'group-1',
+            groupIndex: 0,
+            groupTitle: 'BAG-A0',
+            status: 'succeeded',
+            completedCount: 20,
+            failedCount: 0,
+            outputs: Array.from({ length: 20 }, (_unused, index) => ({
+              id: `output-${index + 1}`,
+              title: `主图${index}`,
+              model: 'gpt-image-2',
+              preview: createPreviewDataUrl(`group-${index + 1}`)
+            }))
+          }
+        ],
+        summary: {
+          title: '套图生成 1 组 x 20 张'
+        }
+      }),
+      createId: () => 'studio-group-meta-1',
+      getNow: () => '2026-04-28T06:00:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'series-generate',
+      patch: {
+        taskName: 'BAG-A',
+        model: 'gpt-image-2',
+        generateCount: 20,
+        batchCount: 1,
+        globalPrompt: '统一风格',
+        sourceImage: {
+          name: 'source.png',
+          path: 'C:/input/source.png'
+        },
+        promptAssignments: Array.from({ length: 20 }, (_unused, index) => ({
+          id: `slot-${index + 1}`,
+          index: index + 1,
+          prompt: `prompt-${index + 1}`,
+          imageType: '商品主图'
+        }))
+      }
+    })
+
+    await service.createTask({
+      menuKey: 'series-generate'
+    })
+    await service.waitForIdle()
+
+    const task = service.getSnapshot().tasks[0]
+    expect(task.groupImageCount).toBe(20)
+    expect(task.totalSubtaskCount).toBe(20)
+    expect(task.completedSubtaskCount).toBe(20)
+    expect(task.failedSubtaskCount).toBe(0)
+    expect(task.currentGroupIndex).toBe(0)
+    expect(task.currentGroupCompletedCount).toBe(20)
+    expect(task.currentGroupTotalCount).toBe(20)
+  })
 })

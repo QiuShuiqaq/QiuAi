@@ -307,6 +307,74 @@ describe('studioImageGenerationService', () => {
     expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
   })
 
+  it('runs series-generate groups serially with at most 5 concurrent jobs per group', async () => {
+    let startedCount = 0
+    let completedCount = 0
+    let activeCount = 0
+    let maxConcurrent = 0
+    let secondGroupStartedAtCompletionCount = -1
+
+    const createDrawTaskDependency = vi.fn(async () => {
+      startedCount += 1
+      activeCount += 1
+      maxConcurrent = Math.max(maxConcurrent, activeCount)
+      if (startedCount === 6 && secondGroupStartedAtCompletionCount < 0) {
+        secondGroupStartedAtCompletionCount = completedCount
+      }
+
+      return {
+        id: `remote-${startedCount}`
+      }
+    })
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      activeCount -= 1
+      completedCount += 1
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    const service = createService({
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-group-order',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一高级电商详情页风格',
+        generateCount: 5,
+        batchCount: 2,
+        promptAssignments: Array.from({ length: 5 }, (_unused, index) => ({
+          index: index + 1,
+          prompt: `提示词-${index + 1}`,
+          imageType: '商品主图'
+        })),
+        size: '1:1'
+      }
+    })
+
+    expect(result.groupedResults).toHaveLength(2)
+    expect(secondGroupStartedAtCompletionCount).toBe(5)
+    expect(maxConcurrent).toBe(5)
+  })
+
   it('uses edited fixed prompt templates from the prompt library when composing image-type prompts', async () => {
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
       id: `remote-${createDrawTaskDependency.mock.calls.length}`,
