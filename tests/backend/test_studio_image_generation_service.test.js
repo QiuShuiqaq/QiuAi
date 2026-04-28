@@ -308,7 +308,7 @@ describe('studioImageGenerationService', () => {
   })
 
   it('runs series-generate groups serially with at most 5 concurrent jobs per group', async () => {
-    const generateCount = 5
+    const generateCount = 8
     const batchCount = 2
     const firstGroupSize = generateCount
     const firstSecondGroupStartIndex = firstGroupSize + 1
@@ -421,6 +421,7 @@ describe('studioImageGenerationService', () => {
     expect(secondGroupStartedAtCompletionCount).toBe(firstGroupSize)
     expect(activeBeforeSecondGroupStart).toBe(0)
     expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, firstGroupSize))
+    expect(maxConcurrent).toBeGreaterThan(1)
     expect(maxConcurrent).toBeLessThanOrEqual(5)
   })
 
