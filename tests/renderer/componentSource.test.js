@@ -5,12 +5,20 @@ import path from 'node:path'
 describe('component sources', () => {
   it('contains top bar, parameter, effect and export panel placeholders without copywriting blocks', () => {
     const appSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
+    const activationSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/ActivationGate.vue'), 'utf8')
     const topbarSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/AppTopBar.vue'), 'utf8')
     const parameterSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/ParameterSettingsPanel.vue'), 'utf8')
     const resultSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/ResultDisplayPanel.vue'), 'utf8')
     const exportSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/ResultExportPanel.vue'), 'utf8')
     const dashboardSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/WorkspaceDashboard.vue'), 'utf8')
     const promptLibrarySource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/PromptLibraryPanel.vue'), 'utf8')
+
+    expect(activationSource).toContain('设备码')
+    expect(activationSource).toContain('复制设备码')
+    expect(activationSource).toContain('导入授权文件')
+    expect(activationSource).toContain('刷新校验')
+    expect(activationSource).toContain('activationState')
+    expect(activationSource).toContain('已激活')
 
     expect(topbarSource).toContain('Logo 点击事件预留')
     expect(topbarSource).toContain('主题切换事件预留')
@@ -28,6 +36,8 @@ describe('component sources', () => {
     expect(topbarSource).toContain('topbar-contact-button')
     expect(topbarSource).toContain('contact-preview-modal')
     expect(topbarSource).toContain('closeContactPreview')
+    expect(topbarSource).toContain('activationSummary')
+    expect(topbarSource).toContain('已激活')
 
     expect(parameterSource).toContain('提交任务事件预留')
     expect(parameterSource).toContain('scrollbar-hidden')

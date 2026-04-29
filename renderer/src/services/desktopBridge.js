@@ -34,6 +34,14 @@ const defaultBrowserStudioSnapshot = {
   }
 }
 
+const defaultBrowserActivationState = {
+  status: 'activated',
+  customerName: '浏览器模式',
+  deviceCode: 'QAI-BROWSER-MODE',
+  activatedAt: '',
+  message: ''
+}
+
 const defaultBrowserPromptTemplates = [
   {
     id: 'product-main',
@@ -269,6 +277,12 @@ function clearBrowserStudioRuntimeState () {
   }
 }
 
+function getBrowserActivationState() {
+  return {
+    ...defaultBrowserActivationState
+  }
+}
+
 function getBrowserPromptTemplates() {
   return readBrowserState(BROWSER_PROMPTS_KEY, defaultBrowserPromptTemplates)
 }
@@ -418,6 +432,44 @@ export function saveStudioDraft (payload) {
 
 export function createStudioTask (payload) {
   return invoke(getChannel('STUDIO_CREATE_TASK'), payload)
+}
+
+export function getActivationStatus () {
+  if (!hasBridge()) {
+    return Promise.resolve(getBrowserActivationState())
+  }
+
+  return invoke(getChannel('LICENSE_GET_STATUS'))
+}
+
+export function getDeviceCode () {
+  if (!hasBridge()) {
+    return Promise.resolve({
+      deviceCode: defaultBrowserActivationState.deviceCode
+    })
+  }
+
+  return invoke(getChannel('LICENSE_GET_DEVICE_CODE'))
+}
+
+export function importLicenseFile (payload) {
+  if (!hasBridge()) {
+    return Promise.resolve({
+      ...getBrowserActivationState(),
+      canceled: false,
+      message: '导入授权成功'
+    })
+  }
+
+  return invoke(getChannel('LICENSE_IMPORT_FILE'), payload)
+}
+
+export function reloadActivation () {
+  if (!hasBridge()) {
+    return Promise.resolve(getBrowserActivationState())
+  }
+
+  return invoke(getChannel('LICENSE_REFRESH'))
 }
 
 export function pickStudioInputAssets (payload) {

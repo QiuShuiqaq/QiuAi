@@ -54,7 +54,8 @@ function registerTaskIpc ({
   taskRunnerService,
   exportTaskDirectory,
   messageRecorder,
-  runtimeLogger
+  runtimeLogger,
+  activationGuard
 }) {
   const runningTasks = new Map()
 
@@ -132,6 +133,7 @@ function registerTaskIpc ({
   })
 
   ipcMain.handle(ipcChannels.TASKS_RUN, async (_event, payload = {}) => {
+    await activationGuard?.assertActivated?.()
     const task = localTaskStoreService.getTask(payload.id)
     if (!task) {
       throw new Error('Task not found.')

@@ -1,9 +1,14 @@
 const Store = require('electron-store')
 const registerSettingsIpc = require('../ipc/settingsIpc')
 const registerDrawIpc = require('../ipc/drawIpc')
+const registerLicenseIpc = require('../ipc/licenseIpc')
 const registerPromptIpc = require('../ipc/promptIpc')
 const registerTaskIpc = require('../ipc/taskIpc')
 const registerStudioIpc = require('../ipc/studioIpc')
+const { createDeviceFingerprintService } = require('../services/deviceFingerprintService')
+const { createLicenseService } = require('../services/licenseService')
+const { LICENSE_PUBLIC_KEY } = require('../services/licensePublicKey')
+const { createActivationGuardService } = require('../services/activationGuardService')
 const { createSettingsStoreService } = require('../services/settingsStoreService')
 const { createPromptTemplateStoreService } = require('../services/promptTemplateStoreService')
 const { createLocalTaskStoreService } = require('../services/localTaskStoreService')
@@ -26,7 +31,15 @@ function registerIpc () {
   attachConsoleCapture({
     runtimeLogger: dataTraceService
   })
+  const deviceFingerprintService = createDeviceFingerprintService()
   const settingsService = createSettingsStoreService({ store: settingsStore })
+  const licenseService = createLicenseService({
+    publicKey: LICENSE_PUBLIC_KEY,
+    getDeviceCode: () => deviceFingerprintService.getDeviceCode()
+  })
+  const activationGuard = createActivationGuardService({
+    licenseService
+  })
   const promptTemplateService = createPromptTemplateStoreService({ store: promptStore })
   const localTaskStoreService = createLocalTaskStoreService({ store: taskStore })
   const studioTaskManagerService = createStudioTaskManagerService()
@@ -45,10 +58,12 @@ function registerIpc () {
   })
 
   registerSettingsIpc({ settingsService })
+  registerLicenseIpc({ licenseService })
   registerDrawIpc({
     settingsService,
     messageRecorder: dataTraceService,
-    runtimeLogger: dataTraceService
+    runtimeLogger: dataTraceService,
+    activationGuard
   })
   registerPromptIpc({ promptTemplateService })
   registerTaskIpc({
@@ -59,15 +74,18 @@ function registerIpc () {
     taskRunnerService,
     exportTaskDirectory,
     messageRecorder: dataTraceService,
-    runtimeLogger: dataTraceService
+    runtimeLogger: dataTraceService,
+    activationGuard
   })
   registerStudioIpc({
     studioWorkspaceService,
     settingsService,
-    dataTraceService
+    dataTraceService,
+    activationGuard
   })
 
   return {
+    licenseService,
     studioTaskManagerService,
     studioWorkspaceService,
     taskRunnerService

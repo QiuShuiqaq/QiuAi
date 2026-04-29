@@ -31,8 +31,9 @@ function createApiClientFromSettings (settingsService, { messageRecorder } = {})
   })
 }
 
-function registerDrawIpc ({ settingsService, messageRecorder, runtimeLogger }) {
+function registerDrawIpc ({ settingsService, messageRecorder, runtimeLogger, activationGuard }) {
   ipcMain.handle(ipcChannels.DRAW_CREATE_TASK, async (_event, payload = {}) => {
+    await activationGuard?.assertActivated?.()
     const httpClient = createApiClientFromSettings(settingsService, { messageRecorder })
 
     try {
@@ -61,6 +62,7 @@ function registerDrawIpc ({ settingsService, messageRecorder, runtimeLogger }) {
   })
 
   ipcMain.handle(ipcChannels.DRAW_GET_RESULT, async (_event, payload = {}) => {
+    await activationGuard?.assertActivated?.()
     const httpClient = createApiClientFromSettings(settingsService, { messageRecorder })
 
     try {

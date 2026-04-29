@@ -13,6 +13,10 @@ defineProps({
   activeTheme: {
     type: String,
     required: true
+  },
+  activationSummary: {
+    type: Object,
+    default: null
   }
 })
 
@@ -102,6 +106,11 @@ function closeContactPreview() {
     <button class="topbar-clean-button" type="button" aria-label="一键清理" @click="onCleanupClick">
       一键清理
     </button>
+
+    <div v-if="activationSummary" class="topbar-activation-pill">
+      <span>已激活</span>
+      <strong>{{ activationSummary.customerName || '已授权设备' }}</strong>
+    </div>
 
     <div class="topbar-contact-actions">
       <button
