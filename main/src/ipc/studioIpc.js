@@ -21,7 +21,7 @@ function resolveUploadDefaultPath (settingsService, menuKey = '') {
   return process.cwd()
 }
 
-function registerStudioIpc({ studioWorkspaceService, settingsService, dataTraceService }) {
+function registerStudioIpc({ studioWorkspaceService, settingsService, dataTraceService, activationGuard }) {
   ipcMain.handle(ipcChannels.STUDIO_GET_SNAPSHOT, () => {
     return studioWorkspaceService.getSnapshot()
   })
@@ -31,6 +31,7 @@ function registerStudioIpc({ studioWorkspaceService, settingsService, dataTraceS
   })
 
   ipcMain.handle(ipcChannels.STUDIO_CREATE_TASK, async (_event, payload = {}) => {
+    await activationGuard?.assertActivated?.()
     return studioWorkspaceService.createTask(payload)
   })
 

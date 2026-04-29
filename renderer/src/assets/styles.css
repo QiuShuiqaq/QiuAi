@@ -258,6 +258,130 @@ textarea {
   gap: 10px;
 }
 
+.topbar-activation-pill {
+  position: absolute;
+  left: calc(66.666% - 150px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+  color: var(--text-main);
+  box-shadow: 0 10px 24px rgba(114, 91, 255, 0.12);
+}
+
+.topbar-activation-pill span {
+  color: var(--completed);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.topbar-activation-pill strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.activation-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.activation-gate {
+  width: min(720px, 100%);
+}
+
+.activation-gate__card {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+  box-shadow: 0 20px 40px var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.activation-gate__header {
+  display: grid;
+  gap: 8px;
+}
+
+.activation-gate__eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activation-gate__header strong {
+  font-size: 28px;
+}
+
+.activation-gate__header p,
+.activation-gate__message {
+  margin: 0;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.activation-gate__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activation-gate__status-label {
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.activation-gate__status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.activation-gate__field {
+  display: grid;
+  gap: 8px;
+}
+
+.activation-gate__field span {
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.activation-gate__field textarea {
+  min-height: 96px;
+  resize: none;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-soft);
+  color: var(--text-main);
+}
+
+.activation-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .topbar-contact-button {
   display: inline-flex;
   align-items: center;

@@ -185,4 +185,26 @@ describe('desktopBridge', () => {
 
     expect(invoke).toHaveBeenCalledWith('studio:clear-runtime-state', undefined)
   })
+
+  it('invokes activation status and license import through the desktop bridge', async () => {
+    const invoke = vi.fn()
+      .mockResolvedValueOnce({ status: 'not_found', deviceCode: 'QAI-TEST', message: '未检测到授权文件' })
+      .mockResolvedValueOnce({ status: 'activated', deviceCode: 'QAI-TEST', message: '导入授权成功' })
+
+    window.qiuai = {
+      channels: {
+        LICENSE_GET_STATUS: 'license:get-status',
+        LICENSE_IMPORT_FILE: 'license:import-file'
+      },
+      invoke
+    }
+
+    const { getActivationStatus, importLicenseFile } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await getActivationStatus()
+    await importLicenseFile()
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'license:get-status', undefined)
+    expect(invoke).toHaveBeenNthCalledWith(2, 'license:import-file', undefined)
+  })
 })

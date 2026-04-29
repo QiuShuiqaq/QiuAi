@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppTopBar from './components/AppTopBar.vue'
+import ActivationGate from './components/ActivationGate.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import DesignWorkspace from './components/DesignWorkspace.vue'
 import TaskManagerSidebar from './components/TaskManagerSidebar.vue'
@@ -9,11 +10,14 @@ import {
   createStudioTask,
   deleteStudioExportItem,
   exportStudioResults,
+  getActivationStatus,
   getSettings,
   getStudioSnapshot,
+  importLicenseFile,
   listPromptTemplates,
   openOutputDirectory,
   pickStudioInputAssets,
+  reloadActivation,
   removePromptTemplate,
   saveSettings,
   savePromptTemplate,
@@ -114,6 +118,8 @@ const apiConfigDraft = reactive({
   activeApiKeyIndex: 0
 })
 const uploadDirectoryDrafts = reactive(createEmptyUploadDirectoryDrafts())
+const activationState = ref(createDefaultActivationState())
+const isActivationLoading = ref(true)
 let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
@@ -287,6 +293,16 @@ function createEmptyHostInfo() {
   }
 }
 
+function createDefaultActivationState() {
+  return {
+    status: 'not_found',
+    customerName: '',
+    deviceCode: '',
+    activatedAt: '',
+    message: ''
+  }
+}
+
 function normalizeStoredDraft(menuKey, storedDraft = {}) {
   const normalizedDraft = {
     ...createDraftForm(menuKey),
@@ -424,6 +440,21 @@ const currentMenuLabel = computed(() => {
   return menuLabelMap.value[activeMenu.value] || '工作台'
 })
 
+const isActivated = computed(() => {
+  return activationState.value.status === 'activated'
+})
+
+const activationSummary = computed(() => {
+  if (!isActivated.value) {
+    return null
+  }
+
+  return {
+    customerName: activationState.value.customerName || '已授权设备',
+    deviceCode: activationState.value.deviceCode || ''
+  }
+})
+
 const currentModelOptions = computed(() => {
   return imageModelOptions
 })
@@ -553,6 +584,27 @@ async function loadStudioSnapshot(options = {}) {
   }
 }
 
+async function loadActivationState({ silent = false } = {}) {
+  if (!silent) {
+    isActivationLoading.value = true
+  }
+
+  try {
+    const fetchActivation = silent ? reloadActivation : getActivationStatus
+    activationState.value = {
+      ...createDefaultActivationState(),
+      ...(await fetchActivation())
+    }
+  } catch (error) {
+    activationState.value = {
+      ...createDefaultActivationState(),
+      message: buildErrorMessage(error, '授权状态读取失败')
+    }
+  } finally {
+    isActivationLoading.value = false
+  }
+}
+
 async function loadPromptTemplateState() {
   try {
     promptTemplates.value = await listPromptTemplates()
@@ -562,6 +614,10 @@ async function loadPromptTemplateState() {
 }
 
 async function refreshStudioRuntimeState() {
+  if (!isActivated.value) {
+    return
+  }
+
   if (isRefreshingStudioRuntime) {
     return
   }
@@ -582,6 +638,78 @@ async function refreshStudioRuntimeState() {
 function handleBrandClick() {
   // Logo 点击事件预留：后续可在这里接入返回首页或重置工作区逻辑。
   activeMenu.value = 'workspace'
+}
+
+async function handleCopyDeviceCode() {
+  const deviceCode = activationState.value.deviceCode || ''
+  if (!deviceCode) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: '复制失败：未获取到设备码'
+    })
+    return
+  }
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(deviceCode)
+      showActionFeedback({
+        type: 'success',
+        title: '成功',
+        message: '设备码已复制'
+      })
+      return
+    }
+  } catch (error) {
+    console.error('Failed to copy device code', error)
+  }
+
+  showActionFeedback({
+    type: 'error',
+    title: '失败',
+    message: '复制失败：当前环境不支持自动复制'
+  })
+}
+
+async function handleImportLicense() {
+  try {
+    const result = await importLicenseFile()
+    if (result?.canceled) {
+      return
+    }
+
+    activationState.value = {
+      ...createDefaultActivationState(),
+      ...result
+    }
+
+    if (result.status === 'activated') {
+      await Promise.all([
+        loadStudioSnapshot(),
+        loadPromptTemplateState()
+      ])
+      showActionFeedback({
+        type: 'success',
+        title: '成功',
+        message: result.message || '导入授权成功'
+      })
+      return
+    }
+
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: result.message || '授权校验失败，请重新导入授权文件'
+    })
+  } catch (error) {
+    console.error('Failed to import license file', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `导入授权文件失败：${buildErrorMessage(error, '授权导入未完成')}`
+    })
+  }
 }
 
 async function handleThemeChange() {
@@ -1251,10 +1379,17 @@ async function handleRemovePromptTemplate(templateId) {
 }
 
 onMounted(() => {
-  void loadStudioSnapshot()
-  void loadPromptTemplateState()
+  void (async () => {
+    await loadActivationState()
+    if (isActivated.value) {
+      await Promise.all([
+        loadStudioSnapshot(),
+        loadPromptTemplateState()
+      ])
+    }
+  })()
   studioRuntimePollTimer = window.setInterval(() => {
-    if (!hasActiveStudioTasks.value) {
+    if (!isActivated.value || !hasActiveStudioTasks.value) {
       return
     }
     void refreshStudioRuntimeState()
@@ -1281,6 +1416,7 @@ onBeforeUnmount(() => {
       brand-label="秋 Ai"
       :theme-options="themeOptions"
       :active-theme="activeTheme"
+      :activation-summary="activationSummary"
       @brand-click="handleBrandClick"
       @cleanup-click="handleClearRuntimeState"
       @theme-change="handleThemeChange"
@@ -1293,7 +1429,33 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section class="shell-grid">
+    <section
+      v-if="isActivationLoading"
+      class="activation-shell"
+    >
+      <ActivationGate
+        :activation-state="activationState"
+        :is-loading="true"
+        @copy-device-code="handleCopyDeviceCode"
+        @import-license="handleImportLicense"
+        @refresh-license="loadActivationState"
+      />
+    </section>
+
+    <section
+      v-else-if="!isActivated"
+      class="activation-shell"
+    >
+      <ActivationGate
+        :activation-state="activationState"
+        :is-loading="false"
+        @copy-device-code="handleCopyDeviceCode"
+        @import-license="handleImportLicense"
+        @refresh-license="loadActivationState"
+      />
+    </section>
+
+    <section v-else class="shell-grid">
       <aside class="shell-grid__sidebar">
         <WorkspaceSidebar
           :menu-items="menuItems"

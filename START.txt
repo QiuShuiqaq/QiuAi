@@ -48,3 +48,10 @@ Ctrl + C
 2. 不要在 .worktrees 目录里启动正式项目
 3. 正式使用时，默认数据目录在：
 QiuAi\DATA
+
+八、授权文件生成
+如果要为客户生成永久设备授权文件，在项目根目录执行：
+
+npm run generate:license -- --customer "客户名称" --device "QAI-XXXX-XXXX-XXXX" --out .\license.qai
+
+生成后会得到一个 `license.qai` 文件，发给客户在软件内导入即可。
