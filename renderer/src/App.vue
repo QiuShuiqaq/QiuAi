@@ -5,6 +5,7 @@ import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import DesignWorkspace from './components/DesignWorkspace.vue'
 import TaskManagerSidebar from './components/TaskManagerSidebar.vue'
 import {
+  clearStudioRuntimeState,
   createStudioTask,
   deleteStudioExportItem,
   exportStudioResults,
@@ -12,6 +13,7 @@ import {
   getStudioSnapshot,
   listPromptTemplates,
   openOutputDirectory,
+  pickStudioInputAssets,
   removePromptTemplate,
   saveSettings,
   savePromptTemplate,
@@ -19,9 +21,7 @@ import {
 } from './services/desktopBridge'
 
 const themeOptions = [
-  { label: '暗黑', value: 'dark' },
-  { label: '明亮', value: 'light' },
-  { label: '护眼', value: 'eye-care' }
+  { label: '暗黑', value: 'dark' }
 ]
 
 const menuItems = [
@@ -80,16 +80,19 @@ const batchOptions = [
 const ratioOptions = [
   { label: '1:1', value: '1:1' },
   { label: '4:3', value: '4:3' },
+  { label: '3:4', value: '3:4' },
   { label: '16:9', value: '16:9' },
-  { label: '9:16', value: '9:16' }
+  { label: '9:16', value: '9:16' },
+  { label: 'A4 竖版', value: 'a4-portrait' },
+  { label: 'A4 横版', value: 'a4-landscape' },
+  { label: 'A5 竖版', value: 'a5-portrait' },
+  { label: 'A5 横版', value: 'a5-landscape' },
+  { label: '8K 横版', value: '8k-landscape' },
+  { label: '8K 竖版', value: '8k-portrait' }
 ]
 
 const activeTheme = ref('dark')
 const activeMenu = ref('workspace')
-const singleImageInput = ref(null)
-const singleDesignImageInput = ref(null)
-const seriesDesignImageInput = ref(null)
-const seriesGenerateImageInput = ref(null)
 const isSavingApiConfig = ref(false)
 const selectedExportIds = ref([])
 const submitButtonState = ref('idle')
@@ -110,6 +113,7 @@ const apiConfigDraft = reactive({
   apiKeys: ['', ''],
   activeApiKeyIndex: 0
 })
+const uploadDirectoryDrafts = reactive(createEmptyUploadDirectoryDrafts())
 let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
@@ -120,19 +124,45 @@ function resolveDefaultModelForMenu() {
   return imageModelOptions[0].value
 }
 
+function createEmptyUploadDirectoryDrafts() {
+  return {
+    'single-image': '',
+    'single-design': '',
+    'series-design': '',
+    'series-generate': ''
+  }
+}
+
+function normalizeUploadDirectoryDrafts(uploadDirectories = {}) {
+  return {
+    ...createEmptyUploadDirectoryDrafts(),
+    ...(uploadDirectories || {})
+  }
+}
+
+function createPreviewUrl(filePath = '') {
+  if (!filePath) {
+    return ''
+  }
+
+  return encodeURI(`file:///${String(filePath).replace(/\\/g, '/')}`)
+}
+
 function createImageAsset(file, idPrefix, preview = true) {
   return {
     id: `${idPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: file.name,
     path: file.path || '',
-    sizeLabel: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-    preview: preview ? URL.createObjectURL(file) : '',
+    sizeLabel: `${Math.max(1, Math.round((Number(file.size) || 0) / 1024))} KB`,
+    preview: preview
+      ? (file instanceof File ? URL.createObjectURL(file) : createPreviewUrl(file.path || ''))
+      : '',
     storedPath: ''
   }
 }
 
 function createSeriesGeneratePromptAssignments(count, existingAssignments = []) {
-  const normalizedCount = Math.max(1, Math.min(20, Number(count) || 1))
+  const normalizedCount = Math.max(1, Math.min(100, Number(count) || 1))
   const sourceAssignments = Array.isArray(existingAssignments) ? existingAssignments : []
 
   return Array.from({ length: normalizedCount }, (_unused, index) => {
@@ -190,8 +220,8 @@ function createDraftForm(menuKey) {
       model: resolveDefaultModelForMenu(menuKey),
       taskName: '',
       sourceImage: null,
-      generateCount: 4,
-      promptAssignments: createSeriesGeneratePromptAssignments(4),
+      generateCount: 20,
+      promptAssignments: createSeriesGeneratePromptAssignments(20),
       batchCount: 1,
       size: '1:1'
     }
@@ -264,7 +294,7 @@ function normalizeStoredDraft(menuKey, storedDraft = {}) {
   }
 
   if (menuKey === 'series-generate') {
-    const generateCount = Math.max(1, Math.min(20, Number(normalizedDraft.generateCount) || 1))
+    const generateCount = Math.max(1, Math.min(100, Number(normalizedDraft.generateCount) || 1))
     normalizedDraft.generateCount = generateCount
     normalizedDraft.promptAssignments = createSeriesGeneratePromptAssignments(generateCount, normalizedDraft.promptAssignments)
   }
@@ -433,10 +463,40 @@ const currentDraftForm = computed(() => {
   return formDrafts.value[activeMenu.value] || createDraftForm(activeMenu.value)
 })
 
+const currentLongRunningHint = computed(() => {
+  const draft = currentDraftForm.value
+
+  if (activeMenu.value === 'series-generate') {
+    const totalSubtasks = Math.max(1, Number(draft.generateCount) || 1) * Math.max(1, Number(draft.batchCount) || 1)
+    if (totalSubtasks > 300) {
+      return '当前任务量很大，将进入长队列执行。'
+    }
+    if (totalSubtasks > 100) {
+      return '当前任务量较大，生成时间会明显变长。'
+    }
+  }
+
+  if (activeMenu.value === 'series-design') {
+    const selectedCount = Array.isArray(draft.imageAssignments)
+      ? draft.imageAssignments.filter((item) => item.selected !== false).length
+      : 0
+    const totalSubtasks = selectedCount * Math.max(1, Number(draft.batchCount) || 1)
+    if (totalSubtasks > 300) {
+      return '当前任务量很大，将进入长队列执行。'
+    }
+    if (totalSubtasks > 100) {
+      return '当前任务量较大，生成时间会明显变长。'
+    }
+  }
+
+  return ''
+})
+
 function applySnapshot(snapshot = {}, settings = {}, options = {}) {
   const {
     preserveDrafts = false,
-    preserveApiConfig = false
+    preserveApiConfig = false,
+    preserveUploadDirectoryDrafts = false
   } = options
 
   if (!preserveDrafts) {
@@ -474,6 +534,11 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
       ? settings.activeApiKeyIndex
       : (snapshot.settingsSummary?.activeApiKeyIndex || 0)
   }
+
+  if (!preserveUploadDirectoryDrafts) {
+    const nextUploadDirectories = normalizeUploadDirectoryDrafts(settings.uploadDirectories)
+    Object.assign(uploadDirectoryDrafts, nextUploadDirectories)
+  }
 }
 
 async function loadStudioSnapshot(options = {}) {
@@ -506,7 +571,8 @@ async function refreshStudioRuntimeState() {
   try {
     await loadStudioSnapshot({
       preserveDrafts: true,
-      preserveApiConfig: true
+      preserveApiConfig: true,
+      preserveUploadDirectoryDrafts: true
     })
   } finally {
     isRefreshingStudioRuntime = false
@@ -518,21 +584,50 @@ function handleBrandClick() {
   activeMenu.value = 'workspace'
 }
 
-async function handleThemeChange(nextTheme) {
+async function handleThemeChange() {
   // 主题切换事件预留：后续可在这里接入本地存储或桌面端配置同步。
-  activeTheme.value = nextTheme
+  activeTheme.value = 'dark'
 
   try {
     await saveSettings({
-      themeMode: nextTheme
+      themeMode: 'dark'
     })
   } catch (error) {
     console.error('Failed to persist theme', error)
   }
 }
 
-function handleWechatClick() {
-  // 微信按钮点击事件预留：后续可在这里接入联系入口或二维码弹窗。
+async function handleClearRuntimeState() {
+  const shouldClear = typeof window !== 'undefined' && typeof window.confirm === 'function'
+    ? window.confirm('确认执行一键清理吗？将重置参数设置、效果展示与日志缓存，但不会删除输出结果、提示词库、API-Key 和保存目录。')
+    : true
+
+  if (!shouldClear) {
+    return
+  }
+
+  try {
+    clearAllDraftPersistTimers()
+    Object.values(formDrafts.value).forEach((draft) => {
+      revokeDraftPreviews(draft || {})
+    })
+
+    await clearStudioRuntimeState()
+    selectedExportIds.value = []
+    await loadStudioSnapshot()
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: '一键清理已完成，参数草稿与日志缓存已重置'
+    })
+  } catch (error) {
+    console.error('Failed to clear studio runtime state', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `一键清理失败：${buildErrorMessage(error, '清理未完成')}`
+    })
+  }
 }
 
 function ensureDraftForMenu(menuKey) {
@@ -591,7 +686,7 @@ function handleFieldUpdate({ field, value }) {
   }
 
   if (activeMenu.value === 'series-generate' && field === 'generateCount') {
-    const generateCount = Math.max(1, Math.min(20, Number(value) || 1))
+    const generateCount = Math.max(1, Math.min(100, Number(value) || 1))
     nextDraft = {
       ...currentDraft,
       generateCount,
@@ -610,16 +705,7 @@ function handleFieldUpdate({ field, value }) {
   scheduleDraftPersist(activeMenu.value, nextDraft)
 }
 
-function handleOpenSingleImagePicker() {
-  singleImageInput.value?.click()
-}
-
-function handleSelectSingleImage(event) {
-  const file = event?.target?.files?.[0]
-  if (!file) {
-    return
-  }
-
+async function applySingleImageSelection(file) {
   ensureDraftForMenu('single-image')
   revokePreview(formDrafts.value['single-image']?.sourceImage?.preview)
   const sourceImage = createImageAsset(file, 'single-image')
@@ -632,19 +718,9 @@ function handleSelectSingleImage(event) {
   scheduleDraftPersist('single-image', {
     sourceImage
   })
-  event.target.value = ''
 }
 
-function handleOpenSingleDesignImagePicker() {
-  singleDesignImageInput.value?.click()
-}
-
-function handleSelectSingleDesignImage(event) {
-  const file = event?.target?.files?.[0]
-  if (!file) {
-    return
-  }
-
+async function applySingleDesignSelection(file) {
   ensureDraftForMenu('single-design')
   revokePreview(formDrafts.value['single-design']?.sourceImage?.preview)
   const sourceImage = createImageAsset(file, 'single-design')
@@ -657,15 +733,9 @@ function handleSelectSingleDesignImage(event) {
   scheduleDraftPersist('single-design', {
     sourceImage
   })
-  event.target.value = ''
 }
 
-function handleOpenSeriesDesignPicker() {
-  seriesDesignImageInput.value?.click()
-}
-
-function handleSelectSeriesDesignImages(event) {
-  const fileList = Array.from(event?.target?.files || [])
+async function applySeriesDesignSelection(fileList = []) {
   if (!fileList.length) {
     return
   }
@@ -676,7 +746,6 @@ function handleSelectSeriesDesignImages(event) {
       title: '失败',
       message: '套图设计一次最多上传 30 张图片'
     })
-    event.target.value = ''
     return
   }
 
@@ -697,19 +766,9 @@ function handleSelectSeriesDesignImages(event) {
   scheduleDraftPersist('series-design', {
     imageAssignments
   })
-  event.target.value = ''
 }
 
-function handleOpenSeriesGeneratePicker() {
-  seriesGenerateImageInput.value?.click()
-}
-
-function handleSelectSeriesGenerateImage(event) {
-  const file = event?.target?.files?.[0]
-  if (!file) {
-    return
-  }
-
+async function applySeriesGenerateSelection(file) {
   ensureDraftForMenu('series-generate')
   revokePreview(formDrafts.value['series-generate']?.sourceImage?.preview)
   const sourceImage = createImageAsset(file, 'series-generate')
@@ -722,7 +781,97 @@ function handleSelectSeriesGenerateImage(event) {
   scheduleDraftPersist('series-generate', {
     sourceImage
   })
-  event.target.value = ''
+}
+
+async function pickInputAssetsForMenu({ menuKey, allowMultiple = false }) {
+  const pickedResult = await pickStudioInputAssets({
+    menuKey,
+    allowMultiple
+  })
+
+  if (pickedResult?.canceled) {
+    return null
+  }
+
+  const files = Array.isArray(pickedResult?.files) ? pickedResult.files : []
+  if (!files.length) {
+    throw new Error('未选择可用的图片文件')
+  }
+
+  return files
+}
+
+async function handleOpenSingleImagePicker() {
+  try {
+    const files = await pickInputAssetsForMenu({
+      menuKey: 'single-image'
+    })
+    if (!files) {
+      return
+    }
+    await applySingleImageSelection(files[0])
+  } catch (error) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `上传测试图片失败：${buildErrorMessage(error, '未能选择图片')}`
+    })
+  }
+}
+
+async function handleOpenSingleDesignImagePicker() {
+  try {
+    const files = await pickInputAssetsForMenu({
+      menuKey: 'single-design'
+    })
+    if (!files) {
+      return
+    }
+    await applySingleDesignSelection(files[0])
+  } catch (error) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `上传参考图片失败：${buildErrorMessage(error, '未能选择图片')}`
+    })
+  }
+}
+
+async function handleOpenSeriesDesignPicker() {
+  try {
+    const files = await pickInputAssetsForMenu({
+      menuKey: 'series-design',
+      allowMultiple: true
+    })
+    if (!files) {
+      return
+    }
+    await applySeriesDesignSelection(files)
+  } catch (error) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `上传套图素材失败：${buildErrorMessage(error, '未能选择图片')}`
+    })
+  }
+}
+
+async function handleOpenSeriesGeneratePicker() {
+  try {
+    const files = await pickInputAssetsForMenu({
+      menuKey: 'series-generate'
+    })
+    if (!files) {
+      return
+    }
+    await applySeriesGenerateSelection(files[0])
+  } catch (error) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `上传参考图失败：${buildErrorMessage(error, '未能选择图片')}`
+    })
+  }
 }
 
 function validateCurrentTaskBeforeSubmit() {
@@ -756,7 +905,6 @@ function validateCurrentTaskBeforeSubmit() {
     const assignments = Array.isArray(draft.imageAssignments) ? draft.imageAssignments : []
     const selectedCount = assignments.filter((item) => item.selected !== false).length
     const hasEmptySelectedPrompt = assignments.some((item) => item.selected !== false && !String(item.prompt || '').trim())
-    const batchCount = Math.max(1, Number(draft.batchCount) || 1)
 
     if (!assignments.length) {
       return '请先上传一套图片'
@@ -778,17 +926,12 @@ function validateCurrentTaskBeforeSubmit() {
       return '请为每一张选中图片选择图片类型'
     }
 
-    if (selectedCount * batchCount > 20) {
-      return '当前任务过重，请将“选中图片数 x 批次”控制在 20 以内'
-    }
-
     return ''
   }
 
   if (activeMenu.value === 'series-generate') {
-    const generateCount = Math.max(1, Math.min(20, Number(draft.generateCount) || 1))
+    const generateCount = Math.max(1, Math.min(100, Number(draft.generateCount) || 1))
     const promptAssignments = createSeriesGeneratePromptAssignments(generateCount, draft.promptAssignments)
-    const totalCount = Math.max(1, Number(draft.batchCount) || 1) * generateCount
 
     if (!draft.sourceImage) {
       return '请先上传一张参考图'
@@ -804,10 +947,6 @@ function validateCurrentTaskBeforeSubmit() {
 
     if (promptAssignments.some((item) => !String(item.imageType || '').trim())) {
       return '请为每一张图片选择图片类型'
-    }
-
-    if (totalCount > 20) {
-      return '当前任务过重，请将“生成数量 x 批次”控制在 20 以内'
     }
   }
 
@@ -1004,6 +1143,43 @@ function handleSwitchApiKey(index) {
   apiConfigDraft.activeApiKeyIndex = index
 }
 
+function handleUploadDirectoryDraftUpdate({ menuKey, value }) {
+  if (!Object.prototype.hasOwnProperty.call(uploadDirectoryDrafts, menuKey)) {
+    return
+  }
+
+  uploadDirectoryDrafts[menuKey] = value
+}
+
+async function handleSaveUploadDirectory(menuKey) {
+  if (!Object.prototype.hasOwnProperty.call(uploadDirectoryDrafts, menuKey)) {
+    return
+  }
+
+  try {
+    const savedSettings = await saveSettings({
+      uploadDirectories: {
+        [menuKey]: String(uploadDirectoryDrafts[menuKey] || '').trim()
+      }
+    })
+    Object.assign(uploadDirectoryDrafts, normalizeUploadDirectoryDrafts(savedSettings.uploadDirectories))
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: uploadDirectoryDrafts[menuKey]
+        ? '默认打开目录已保存'
+        : '默认打开目录已清空'
+    })
+  } catch (error) {
+    console.error('Failed to save upload directory', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `保存目录失败：${buildErrorMessage(error, '目录保存未完成')}`
+    })
+  }
+}
+
 async function handleSaveApiConfig() {
   isSavingApiConfig.value = true
 
@@ -1106,8 +1282,8 @@ onBeforeUnmount(() => {
       :theme-options="themeOptions"
       :active-theme="activeTheme"
       @brand-click="handleBrandClick"
+      @cleanup-click="handleClearRuntimeState"
       @theme-change="handleThemeChange"
-      @wechat-click="handleWechatClick"
     />
 
     <div v-if="actionNotice.visible" class="app-notice-layer" role="status" aria-live="polite">
@@ -1118,36 +1294,6 @@ onBeforeUnmount(() => {
     </div>
 
     <section class="shell-grid">
-      <input
-        ref="singleImageInput"
-        class="visually-hidden"
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        @change="handleSelectSingleImage"
-      />
-      <input
-        ref="singleDesignImageInput"
-        class="visually-hidden"
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        @change="handleSelectSingleDesignImage"
-      />
-      <input
-        ref="seriesDesignImageInput"
-        class="visually-hidden"
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        multiple
-        @change="handleSelectSeriesDesignImages"
-      />
-      <input
-        ref="seriesGenerateImageInput"
-        class="visually-hidden"
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        @change="handleSelectSeriesGenerateImage"
-      />
-
       <aside class="shell-grid__sidebar">
         <WorkspaceSidebar
           :menu-items="menuItems"
@@ -1164,7 +1310,9 @@ onBeforeUnmount(() => {
           :model-options="currentModelOptions"
           :batch-options="batchOptions"
           :ratio-options="ratioOptions"
+          :upload-directory-drafts="uploadDirectoryDrafts"
           :submit-button-state="submitButtonState"
+          :long-running-hint="currentLongRunningHint"
           :model-pricing-catalog="modelPricingCatalog"
           :recharge-pricing-catalog="rechargePricingCatalog"
           :result-payload="resultPayload"
@@ -1191,6 +1339,8 @@ onBeforeUnmount(() => {
           @save-api-config="handleSaveApiConfig"
           @save-prompt-template="handleSavePromptTemplate"
           @remove-prompt-template="handleRemovePromptTemplate"
+          @update-upload-directory-draft="handleUploadDirectoryDraftUpdate"
+          @save-upload-directory="handleSaveUploadDirectory"
         />
       </section>
 

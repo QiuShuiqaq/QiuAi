@@ -42,7 +42,6 @@ function clearApiKey () {
       <span>界面主题</span>
       <select v-model="appStore.settings.themeMode">
         <option value="dark">夜间科技</option>
-        <option value="light">明亮护眼</option>
       </select>
     </label>
     <label class="field-card">

@@ -27,7 +27,7 @@ describe('appStore', () => {
     })
     expect(state.settings.apiKey).toBe('sk-1')
     expect(state.settings.defaultSize).toBe('16:9')
-    expect(state.settings.themeMode).toBe('eye-care')
+    expect(state.settings.themeMode).toBe('dark')
 
     setCurrentTask(state, {
       id: 'task-1',

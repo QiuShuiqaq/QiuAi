@@ -37,9 +37,17 @@ defineProps({
     type: Array,
     required: true
   },
+  uploadDirectoryDrafts: {
+    type: Object,
+    required: true
+  },
   submitButtonState: {
     type: String,
     required: true
+  },
+  longRunningHint: {
+    type: String,
+    default: ''
   },
   modelPricingCatalog: {
     type: Array,
@@ -93,6 +101,8 @@ defineProps({
 
 const emit = defineEmits([
   'update-field',
+  'update-upload-directory-draft',
+  'save-upload-directory',
   'submit-task',
   'toggle-export-item',
   'batch-download',
@@ -166,9 +176,13 @@ const emit = defineEmits([
           :model-options="modelOptions"
           :batch-options="batchOptions"
           :ratio-options="ratioOptions"
+          :upload-directory-drafts="uploadDirectoryDrafts"
           :submit-button-state="submitButtonState"
+          :long-running-hint="longRunningHint"
           :custom-prompt-templates="customPromptTemplates"
           @update-field="emit('update-field', $event)"
+          @update-upload-directory-draft="emit('update-upload-directory-draft', $event)"
+          @save-upload-directory="emit('save-upload-directory', $event)"
           @submit-task="emit('submit-task')"
           @select-single-image="emit('select-single-image')"
           @select-single-design-image="emit('select-single-design-image')"

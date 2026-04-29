@@ -74,10 +74,6 @@ const latestTaskMeta = computed(() => {
 
   return [
     {
-      label: '任务名称',
-      value: props.latestTask.title || '--'
-    },
-    {
       label: '任务状态',
       value: props.latestTask.status || '--'
     },
@@ -86,8 +82,16 @@ const latestTaskMeta = computed(() => {
       value: `${Math.min(100, Math.max(0, Number(props.latestTask.progress ?? 0)))}%`
     },
     {
-      label: '生成时间',
-      value: props.latestTask.createdAt || '--'
+      label: '当前组',
+      value: Number.isInteger(props.latestTask.currentGroupIndex)
+        ? `第 ${props.latestTask.currentGroupIndex + 1} 组`
+        : '--'
+    },
+    {
+      label: '组内进度',
+      value: props.latestTask.currentGroupTotalCount
+        ? `${props.latestTask.currentGroupCompletedCount || 0} / ${props.latestTask.currentGroupTotalCount}`
+        : '--'
     }
   ]
 })
@@ -186,8 +190,8 @@ function closePreview() {
 
       <section v-if="showSingleDesign && resultPayload.comparisonResults?.length" class="result-image-block">
         <h3>单模型效果展示</h3>
-        <div class="comparison-grid comparison-grid--single">
-          <article v-for="image in resultPayload.comparisonResults" :key="image.id" class="comparison-card">
+        <div class="comparison-grid comparison-grid--single comparison-grid--adaptive">
+          <article v-for="image in resultPayload.comparisonResults" :key="image.id" class="comparison-card comparison-card--adaptive">
             <div class="comparison-card__header">
               <strong>{{ image.model }}</strong>
             </div>

@@ -41,10 +41,15 @@ export function createInitialState () {
 
 export const appStore = reactive(createInitialState())
 
+function normalizeThemeMode () {
+  return 'dark'
+}
+
 export function setSettings (state, payload = {}) {
   state.settings = {
     ...state.settings,
-    ...payload
+    ...payload,
+    themeMode: normalizeThemeMode(payload.themeMode || state.settings.themeMode)
   }
 
   if (!state.generation.size || state.generation.size === '1:1') {

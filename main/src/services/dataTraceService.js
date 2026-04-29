@@ -7,6 +7,7 @@ const {
 
 function createDataTraceService ({
   appendFile = fs.appendFile,
+  writeFile = fs.writeFile,
   mkdir = fs.mkdir,
   getNow = () => new Date().toISOString()
 } = {}) {
@@ -34,11 +35,23 @@ function createDataTraceService ({
     await appendLine(logFilePath, payload)
   }
 
+  async function clearRuntimeFiles () {
+    await ensureDataLayout({ mkdir })
+    await writeFile(messageFilePath, '', 'utf8')
+    await writeFile(logFilePath, '', 'utf8')
+    await writeFile(outputMessageFilePath, '', 'utf8')
+
+    return {
+      cleared: true
+    }
+  }
+
   return {
     messageFilePath,
     logFilePath,
     record,
-    log
+    log,
+    clearRuntimeFiles
   }
 }
 

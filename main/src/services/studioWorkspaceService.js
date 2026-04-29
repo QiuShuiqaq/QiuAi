@@ -5,7 +5,11 @@ const crypto = require('node:crypto')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { exportTaskDirectory: defaultExportTaskDirectory } = require('./taskExportService')
-const { createStudioImageGenerationService, normalizeSingleImageModels } = require('./studioImageGenerationService')
+const {
+  createStudioImageGenerationService,
+  normalizeSingleImageModels,
+  MAX_SERIES_GENERATE_GROUP_SIZE
+} = require('./studioImageGenerationService')
 const {
   ensureDirectory,
   getTaskDataDirectories,
@@ -26,9 +30,7 @@ async function fileExists(targetPath) {
 }
 
 const themeOptions = [
-  { label: '暗黑', value: 'dark' },
-  { label: '明亮', value: 'light' },
-  { label: '护眼', value: 'eye-care' }
+  { label: '暗黑', value: 'dark' }
 ]
 
 const menuItems = [
@@ -154,7 +156,7 @@ function normalizeImageAssignments(assignments = []) {
 }
 
 function normalizePromptAssignments(promptAssignments = [], count = 1) {
-  const normalizedCount = Math.max(1, Math.min(20, Number(count) || 1))
+  const normalizedCount = Math.max(1, Math.min(MAX_SERIES_GENERATE_GROUP_SIZE, Number(count) || 1))
   const sourceAssignments = Array.isArray(promptAssignments) ? promptAssignments : []
 
   return Array.from({ length: normalizedCount }, (_unused, index) => {
@@ -222,7 +224,7 @@ function normalizeDraftForMenu(menuKey, draft = {}) {
   }
 
   if (menuKey === 'series-generate') {
-    const generateCount = Math.max(1, Math.min(20, Number(draft.generateCount) || defaultDraft.generateCount || 1))
+    const generateCount = Math.max(1, Math.min(MAX_SERIES_GENERATE_GROUP_SIZE, Number(draft.generateCount) || defaultDraft.generateCount || 1))
     return {
       ...defaultDraft,
       ...draft,
@@ -338,8 +340,8 @@ function createDefaultDrafts() {
       model: resolveDefaultModelForMenu('series-generate'),
       taskName: '',
       sourceImage: null,
-      generateCount: 4,
-      promptAssignments: normalizePromptAssignments([], 4),
+      generateCount: 20,
+      promptAssignments: normalizePromptAssignments([], 20),
       batchCount: 1,
       size: '1:1'
     },
@@ -857,8 +859,15 @@ async function saveStudioResults({
     const folderName = `${folderBaseName}${groupIndex}`
     const groupDirectory = path.resolve(outputDirectory, folderName)
     await ensureDirectory(groupDirectory)
+    const defaultCompletedCount = menuKey === 'series-design'
+      ? (group.outputs || []).filter((item) => item.sourceTag === 'generated').length
+      : (group.outputs || []).length
     const persistedGroup = {
       ...group,
+      groupIndex: Number.isInteger(group.groupIndex) ? group.groupIndex : groupIndex,
+      status: group.status || 'succeeded',
+      completedCount: Number(group.completedCount ?? defaultCompletedCount),
+      failedCount: Number(group.failedCount ?? 0),
       outputs: []
     }
 
@@ -881,6 +890,7 @@ async function saveStudioResults({
 
       persistedGroup.outputs.push({
         ...output,
+        status: output.status || '已完成',
         preview: '',
         savedPath
       })
@@ -1020,7 +1030,7 @@ function resolveEstimatedPlannedOutputCount(menuKey, draft = {}) {
   }
 
   if (menuKey === 'series-generate') {
-    return Math.max(1, Number(draft.batchCount) || 1) * Math.max(1, Number(draft.generateCount) || 1)
+    return Math.max(1, Number(draft.batchCount) || 1) * resolveGroupImageCount(menuKey, draft)
   }
 
   return 0
@@ -1040,7 +1050,7 @@ function resolveTaskTitle(menuKey, draft = {}) {
   }
 
   if (menuKey === 'series-generate') {
-    return `套图生成 ${Math.max(1, Number(draft.batchCount) || 1)} 批 x ${Math.max(1, Number(draft.generateCount) || 1)} 张`
+    return `套图生成 ${Math.max(1, Number(draft.batchCount) || 1)} 批 x ${resolveGroupImageCount(menuKey, draft)} 张`
   }
 
   return `${menuLabelMap[menuKey]}任务`
@@ -1058,6 +1068,112 @@ function resolveTaskModelSummary(menuKey, draft = {}) {
   return draft.model || ''
 }
 
+function resolveGroupImageCount(menuKey, draft = {}) {
+  if (menuKey === 'series-generate') {
+    return Math.max(1, Math.min(MAX_SERIES_GENERATE_GROUP_SIZE, Number(draft.generateCount) || 1))
+  }
+
+  if (menuKey === 'series-design') {
+    return Array.isArray(draft.imageAssignments) ? draft.imageAssignments.length : 0
+  }
+
+  return 0
+}
+
+function resolveSeriesSelectedAssignmentCount(draft = {}) {
+  return Array.isArray(draft.imageAssignments)
+    ? draft.imageAssignments.filter((item) => item.selected !== false).length
+    : 0
+}
+
+function resolveGroupedTaskBaseState(menuKey, draft = {}) {
+  if (menuKey === 'series-generate') {
+    const groupImageCount = resolveGroupImageCount(menuKey, draft)
+    return {
+      groupImageCount,
+      totalSubtaskCount: groupImageCount * Math.max(1, Number(draft.batchCount) || 1),
+      completedSubtaskCount: 0,
+      failedSubtaskCount: 0,
+      currentGroupIndex: 0,
+      currentGroupCompletedCount: 0,
+      currentGroupTotalCount: groupImageCount
+    }
+  }
+
+  if (menuKey === 'series-design') {
+    const groupImageCount = resolveGroupImageCount(menuKey, draft)
+    const selectedAssignmentCount = resolveSeriesSelectedAssignmentCount(draft)
+    return {
+      groupImageCount,
+      totalSubtaskCount: selectedAssignmentCount * Math.max(1, Number(draft.batchCount) || 1),
+      completedSubtaskCount: 0,
+      failedSubtaskCount: 0,
+      currentGroupIndex: 0,
+      currentGroupCompletedCount: 0,
+      currentGroupTotalCount: selectedAssignmentCount
+    }
+  }
+
+  return {
+    groupImageCount: 0,
+    totalSubtaskCount: 0,
+    completedSubtaskCount: 0,
+    failedSubtaskCount: 0,
+    currentGroupIndex: 0,
+    currentGroupCompletedCount: 0,
+    currentGroupTotalCount: 0
+  }
+}
+
+function resolveGroupedProgressState(menuKey, draft = {}, resultPayload = {}) {
+  const baseState = resolveGroupedTaskBaseState(menuKey, draft)
+  const groups = Array.isArray(resultPayload.groupedResults) ? resultPayload.groupedResults : []
+
+  if (!groups.length || (menuKey !== 'series-design' && menuKey !== 'series-generate')) {
+    return baseState
+  }
+
+  const completedSubtaskCount = groups.reduce((total, group) => {
+    if (Number.isFinite(group.completedCount)) {
+      return total + Number(group.completedCount)
+    }
+
+    if (menuKey === 'series-design') {
+      return total + (group.outputs || []).filter((item) => item.sourceTag === 'generated').length
+    }
+
+    return total + (group.outputs || []).length
+  }, 0)
+
+  const failedSubtaskCount = groups.reduce((total, group) => {
+    return total + (Number(group.failedCount) || 0)
+  }, 0)
+
+  const currentGroup = groups[groups.length - 1] || null
+  const currentGroupIndex = currentGroup && Number.isInteger(currentGroup.groupIndex)
+    ? currentGroup.groupIndex
+    : Math.max(0, groups.length - 1)
+  const currentGroupCompletedCount = currentGroup
+    ? (
+        Number.isFinite(currentGroup.completedCount)
+          ? Number(currentGroup.completedCount)
+          : (
+              menuKey === 'series-design'
+                ? (currentGroup.outputs || []).filter((item) => item.sourceTag === 'generated').length
+                : (currentGroup.outputs || []).length
+            )
+      )
+    : 0
+
+  return {
+    ...baseState,
+    completedSubtaskCount,
+    failedSubtaskCount,
+    currentGroupIndex,
+    currentGroupCompletedCount
+  }
+}
+
 function buildTaskRecord({
   menuKey,
   draft,
@@ -1071,7 +1187,14 @@ function buildTaskRecord({
   batchCount,
   status,
   progress,
-  error = ''
+  error = '',
+  groupImageCount = 0,
+  totalSubtaskCount = 0,
+  completedSubtaskCount = 0,
+  failedSubtaskCount = 0,
+  currentGroupIndex = 0,
+  currentGroupCompletedCount = 0,
+  currentGroupTotalCount = 0
 }) {
   const nextTask = {
     id: taskId,
@@ -1087,7 +1210,14 @@ function buildTaskRecord({
     progress,
     createdAt,
     inputDirectory,
-    outputDirectory
+    outputDirectory,
+    groupImageCount,
+    totalSubtaskCount,
+    completedSubtaskCount,
+    failedSubtaskCount,
+    currentGroupIndex,
+    currentGroupCompletedCount,
+    currentGroupTotalCount
   }
 
   if (error) {
@@ -1098,6 +1228,8 @@ function buildTaskRecord({
 }
 
 function buildQueuedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, inputDirectory, outputDirectory }) {
+  const groupedProgress = resolveGroupedTaskBaseState(menuKey, draft)
+
   return buildTaskRecord({
     menuKey,
     draft,
@@ -1112,7 +1244,8 @@ function buildQueuedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
       ? Math.max(1, Number(draft.batchCount) || 1)
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '等待中',
-    progress: 0
+    progress: 0,
+    ...groupedProgress
   })
 }
 
@@ -1142,6 +1275,8 @@ function normalizeTaskProgress(progressValue, fallbackValue = 0) {
 }
 
 function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, inputDirectory, outputDirectory, resultPayload }) {
+  const groupedProgress = resolveGroupedProgressState(menuKey, draft, resultPayload)
+
   return buildTaskRecord({
     menuKey,
     draft,
@@ -1156,11 +1291,14 @@ function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, input
       ? Math.max(1, Number(draft.batchCount) || 1)
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '已完成',
-    progress: 100
+    progress: 100,
+    ...groupedProgress
   })
 }
 
 function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, inputDirectory, outputDirectory, errorMessage }) {
+  const groupedProgress = resolveGroupedTaskBaseState(menuKey, draft)
+
   return buildTaskRecord({
     menuKey,
     draft,
@@ -1176,7 +1314,8 @@ function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '失败',
     progress: 100,
-    error: errorMessage
+    error: errorMessage,
+    ...groupedProgress
   })
 }
 
@@ -1636,6 +1775,34 @@ function createStudioWorkspaceService({
     return queuedTask
   }
 
+  async function clearRuntimeState() {
+    const state = getStoredState()
+    const tasks = getStoredTasks(state)
+    const hasActiveTasks = tasks.some((task) => ['等待中', '进行中'].includes(task.status))
+
+    if (hasActiveTasks) {
+      throw new Error('当前存在进行中的任务，暂不能一键清理')
+    }
+
+    saveState({
+      ...state,
+      formDrafts: createDefaultDrafts(),
+      resultsByMenu: createDefaultResultsByMenu(),
+      exportItemsByMenu: createDefaultExportItemsByMenu()
+    })
+    invalidateExportItemsCache()
+
+    await safeRuntimeLog(runtimeLogger, {
+      level: 'info',
+      scope: 'studio-workspace',
+      message: 'Cleared runtime studio state while preserving exports and settings'
+    })
+
+    return {
+      cleared: true
+    }
+  }
+
   async function deleteExportItem({
     menuKey = 'workspace',
     exportItemId = ''
@@ -1768,6 +1935,7 @@ function createStudioWorkspaceService({
     getSnapshot,
     saveDraft,
     createTask,
+    clearRuntimeState,
     deleteExportItem,
     exportSelectedResults,
     waitForIdle: async () => {

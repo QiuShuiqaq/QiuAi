@@ -26,6 +26,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  uploadDirectoryDrafts: {
+    type: Object,
+    default: () => ({})
+  },
   customPromptTemplates: {
     type: Array,
     default: () => []
@@ -33,11 +37,17 @@ const props = defineProps({
   submitButtonState: {
     type: String,
     default: 'idle'
+  },
+  longRunningHint: {
+    type: String,
+    default: ''
   }
 })
 
 const emit = defineEmits([
   'update-field',
+  'update-upload-directory-draft',
+  'save-upload-directory',
   'submit-task',
   'select-single-image',
   'select-single-design-image',
@@ -90,6 +100,21 @@ function emitField(field, value) {
     field,
     value
   })
+}
+
+function getUploadDirectoryValue(menuKey) {
+  return props.uploadDirectoryDrafts?.[menuKey] || ''
+}
+
+function emitUploadDirectoryDraft(menuKey, value) {
+  emit('update-upload-directory-draft', {
+    menuKey,
+    value
+  })
+}
+
+function saveUploadDirectory(menuKey) {
+  emit('save-upload-directory', menuKey)
 }
 
 function clampValue(value, min, max) {
@@ -223,10 +248,18 @@ function appendPromptTemplate(templatePrompt = '') {
       <template v-if="activeMenu === 'single-image'">
         <section class="form-field">
           <span>测试图片</span>
-          <div class="toggle-row">
+          <div class="upload-directory-row">
             <button class="icon-action-button" type="button" aria-label="上传测试图片" title="上传测试图片" @click="emit('select-single-image')">
               <img :src="uploadIconUrl" alt="" />
             </button>
+            <input
+              class="upload-directory-input"
+              :value="getUploadDirectoryValue('single-image')"
+              type="text"
+              placeholder="默认打开目录"
+              @input="emitUploadDirectoryDraft('single-image', $event.target.value)"
+            />
+            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('single-image')">保存目录</button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -303,10 +336,18 @@ function appendPromptTemplate(templatePrompt = '') {
       <template v-else-if="activeMenu === 'single-design'">
         <section class="form-field">
           <span>参考图片</span>
-          <div class="toggle-row">
+          <div class="upload-directory-row">
             <button class="icon-action-button" type="button" aria-label="上传参考图片" title="上传参考图片" @click="emit('select-single-design-image')">
               <img :src="uploadIconUrl" alt="" />
             </button>
+            <input
+              class="upload-directory-input"
+              :value="getUploadDirectoryValue('single-design')"
+              type="text"
+              placeholder="默认打开目录"
+              @input="emitUploadDirectoryDraft('single-design', $event.target.value)"
+            />
+            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('single-design')">保存目录</button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -359,10 +400,18 @@ function appendPromptTemplate(templatePrompt = '') {
       <template v-else-if="activeMenu === 'series-design'">
         <section class="form-field">
           <span>套图素材</span>
-          <div class="toggle-row">
+          <div class="upload-directory-row">
             <button class="icon-action-button" type="button" aria-label="上传一套图片" title="上传一套图片" @click="emit('select-series-design-images')">
               <img :src="uploadIconUrl" alt="" />
             </button>
+            <input
+              class="upload-directory-input"
+              :value="getUploadDirectoryValue('series-design')"
+              type="text"
+              placeholder="默认打开目录"
+              @input="emitUploadDirectoryDraft('series-design', $event.target.value)"
+            />
+            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('series-design')">保存目录</button>
           </div>
         </section>
 
@@ -435,7 +484,7 @@ function appendPromptTemplate(templatePrompt = '') {
               class="stepper-button stepper-button--decrement"
               type="button"
               aria-label="减少生成组数"
-              @click="stepField('batchCount', draftForm.batchCount, -1, 1, 6)"
+              @click="stepField('batchCount', draftForm.batchCount, -1, 1, 9999)"
             >
               <span class="stepper-button__triangle stepper-button__triangle--left"></span>
             </button>
@@ -444,28 +493,37 @@ function appendPromptTemplate(templatePrompt = '') {
               class="stepper-value"
               type="number"
               min="1"
-              max="6"
-              @input="updateStepperField('batchCount', $event.target.value, 1, 6)"
+              max="9999"
+              @input="updateStepperField('batchCount', $event.target.value, 1, 9999)"
             />
             <button
               class="stepper-button stepper-button--increment"
               type="button"
               aria-label="增加生成组数"
-              @click="stepField('batchCount', draftForm.batchCount, 1, 1, 6)"
+              @click="stepField('batchCount', draftForm.batchCount, 1, 1, 9999)"
             >
               <span class="stepper-button__triangle stepper-button__triangle--right"></span>
             </button>
           </div>
         </label>
+        <p v-if="longRunningHint" class="section-copy">{{ longRunningHint }}</p>
       </template>
 
       <template v-else-if="activeMenu === 'series-generate'">
         <section class="form-field">
           <span>参考图片</span>
-          <div class="toggle-row">
+          <div class="upload-directory-row">
             <button class="icon-action-button" type="button" aria-label="上传参考图" title="上传参考图" @click="emit('select-series-generate-image')">
               <img :src="uploadIconUrl" alt="" />
             </button>
+            <input
+              class="upload-directory-input"
+              :value="getUploadDirectoryValue('series-generate')"
+              type="text"
+              placeholder="默认打开目录"
+              @input="emitUploadDirectoryDraft('series-generate', $event.target.value)"
+            />
+            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('series-generate')">保存目录</button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -503,7 +561,7 @@ function appendPromptTemplate(templatePrompt = '') {
                 class="stepper-button stepper-button--decrement"
                 type="button"
                 aria-label="减少生成数量"
-                @click="stepField('generateCount', draftForm.generateCount, -1, 1, 20)"
+                @click="stepField('generateCount', draftForm.generateCount, -1, 1, 100)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--left"></span>
               </button>
@@ -512,14 +570,14 @@ function appendPromptTemplate(templatePrompt = '') {
                 class="stepper-value"
                 type="number"
                 min="1"
-                max="20"
-                @input="updateStepperField('generateCount', $event.target.value, 1, 20)"
+                max="100"
+                @input="updateStepperField('generateCount', $event.target.value, 1, 100)"
               />
               <button
                 class="stepper-button stepper-button--increment"
                 type="button"
                 aria-label="增加生成数量"
-                @click="stepField('generateCount', draftForm.generateCount, 1, 1, 20)"
+                @click="stepField('generateCount', draftForm.generateCount, 1, 1, 100)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--right"></span>
               </button>
@@ -533,7 +591,7 @@ function appendPromptTemplate(templatePrompt = '') {
                 class="stepper-button stepper-button--decrement"
                 type="button"
                 aria-label="减少批次"
-                @click="stepField('batchCount', draftForm.batchCount, -1, 1, 6)"
+                @click="stepField('batchCount', draftForm.batchCount, -1, 1, 9999)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--left"></span>
               </button>
@@ -542,20 +600,21 @@ function appendPromptTemplate(templatePrompt = '') {
                 class="stepper-value"
                 type="number"
                 min="1"
-                max="6"
-                @input="updateStepperField('batchCount', $event.target.value, 1, 6)"
+                max="9999"
+                @input="updateStepperField('batchCount', $event.target.value, 1, 9999)"
               />
               <button
                 class="stepper-button stepper-button--increment"
                 type="button"
                 aria-label="增加批次"
-                @click="stepField('batchCount', draftForm.batchCount, 1, 1, 6)"
+                @click="stepField('batchCount', draftForm.batchCount, 1, 1, 9999)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--right"></span>
               </button>
             </div>
           </label>
         </div>
+        <p v-if="longRunningHint" class="section-copy">{{ longRunningHint }}</p>
         <section class="form-field">
           <span>逐张提示词配置</span>
           <div class="assignment-list">

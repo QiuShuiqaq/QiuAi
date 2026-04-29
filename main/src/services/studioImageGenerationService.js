@@ -9,7 +9,8 @@ const MAX_SERIES_DESIGN_IMAGES = 30
 const SERIES_DESIGN_SOFT_WEIGHT = 12
 const SERIES_DESIGN_HARD_WEIGHT = 20
 const SERIES_GENERATE_SOFT_TOTAL = 8
-const SERIES_GENERATE_HARD_TOTAL = 20
+const SERIES_GROUP_CONCURRENCY = 5
+const MAX_SERIES_GENERATE_GROUP_SIZE = 100
 const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
 const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
   商品主图: {
@@ -45,6 +46,14 @@ const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
 }
 const DEFAULT_CONCURRENCY = 2
 const MAX_RETRY_COUNT = 2
+const ASPECT_RATIO_PRESET_MAP = {
+  'a4-portrait': '3:4',
+  'a4-landscape': '4:3',
+  'a5-portrait': '3:4',
+  'a5-landscape': '4:3',
+  '8k-landscape': '16:9',
+  '8k-portrait': '9:16'
+}
 
 function sleep(durationMs) {
   return new Promise((resolve) => {
@@ -118,6 +127,11 @@ function resolveImageSize(model = '') {
   return '1K'
 }
 
+function resolveAspectRatio(size = '1:1') {
+  const normalizedSize = String(size || '').trim()
+  return ASPECT_RATIO_PRESET_MAP[normalizedSize] || normalizedSize || '1:1'
+}
+
 function normalizeProgressValue(progressValue, fallbackValue = 0) {
   const numericProgress = Number(progressValue)
   if (!Number.isFinite(numericProgress)) {
@@ -168,7 +182,7 @@ function createSeriesOutputFromSavedImage(savedImage = {}, { id, title, model, s
 }
 
 function normalizeSeriesGeneratePromptAssignments(promptAssignments = [], generateCount = 1) {
-  const normalizedGenerateCount = Math.max(1, Math.min(20, Number(generateCount) || 1))
+  const normalizedGenerateCount = Math.max(1, Math.min(MAX_SERIES_GENERATE_GROUP_SIZE, Number(generateCount) || 1))
   const sourceAssignments = Array.isArray(promptAssignments) ? promptAssignments : []
 
   return Array.from({ length: normalizedGenerateCount }, (_unused, index) => {
@@ -264,6 +278,27 @@ async function mapWithConcurrency(items = [], mapper, concurrency = DEFAULT_CONC
   await Promise.all(Array.from({
     length: Math.min(normalizedConcurrency, Math.max(items.length, 1))
   }, () => runWorker()))
+
+  return results
+}
+
+async function runTasksWithConcurrency(taskFactories = [], concurrency = SERIES_GROUP_CONCURRENCY) {
+  const normalizedFactories = Array.isArray(taskFactories) ? taskFactories : []
+  const normalizedConcurrency = Math.max(1, Number(concurrency) || 1)
+  const results = new Array(normalizedFactories.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < normalizedFactories.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      results[currentIndex] = await normalizedFactories[currentIndex]()
+    }
+  }
+
+  await Promise.all(Array.from({
+    length: Math.min(normalizedConcurrency, normalizedFactories.length)
+  }, () => worker()))
 
   return results
 }
@@ -387,11 +422,6 @@ function validateStudioImageTask({ menuKey, draft }) {
     if (promptAssignments.some((item) => !item.imageType)) {
       throw new Error('套图生成需要为每一张图片选择图片类型')
     }
-
-    const totalImageCount = Math.max(1, Number(draft.batchCount) || 1) * Math.max(1, Number(draft.generateCount) || 1)
-    if (totalImageCount > SERIES_GENERATE_HARD_TOTAL) {
-      throw new Error(`套图生成当前任务过重，请将“生成数量 x 批次”控制在 ${SERIES_GENERATE_HARD_TOTAL} 以内`)
-    }
   }
 }
 
@@ -514,7 +544,7 @@ function createStudioImageGenerationService({
         jobLabel: `single-image-${index + 1}`,
         model,
         prompt: composePrompt([draft.prompt, draft.notes]),
-        aspectRatio: draft.size || '1:1',
+        aspectRatio: resolveAspectRatio(draft.size || '1:1'),
         imageSize: resolveImageSize(model),
         filePaths: [sourceFilePath],
         outputDirectory,
@@ -553,7 +583,7 @@ function createStudioImageGenerationService({
       jobLabel: 'single-design-1',
       model: draft.model,
       prompt: composePrompt([draft.prompt, draft.notes]),
-      aspectRatio: draft.size || '1:1',
+      aspectRatio: resolveAspectRatio(draft.size || '1:1'),
       imageSize: resolveImageSize(draft.model),
       filePaths: sourceFilePath ? [sourceFilePath] : [],
       outputDirectory,
@@ -630,36 +660,41 @@ function createStudioImageGenerationService({
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
       const generatedReplacementMap = new Map()
 
-      const generatedItems = await mapWithConcurrency(selectedAssignments, async (assignment, selectedIndex) => {
-        const sourceFilePath = assignment.storedPath || assignment.path || ''
-        const subtaskIndex = (batchIndex * selectedAssignments.length) + selectedIndex
-        const completedResult = await executeRemoteImageTask({
-          jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-          model: draft.model,
-          prompt: composePrompt([draft.globalPrompt, assignment.composedPrompt]),
-          aspectRatio: draft.size || '1:1',
-          imageSize: resolveImageSize(draft.model),
-          filePaths: [sourceFilePath],
-          outputDirectory,
-          onProgress: async ({ progress, status }) => {
-            await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
-          }
-        })
-        const savedImage = completedResult.results?.[0]
-        if (!savedImage) {
-          throw new Error(`${assignment.name} 未返回可用图片`)
-        }
+      const generatedItems = await runTasksWithConcurrency(
+        selectedAssignments.map((assignment, selectedIndex) => {
+          return async () => {
+            const sourceFilePath = assignment.storedPath || assignment.path || ''
+            const subtaskIndex = (batchIndex * selectedAssignments.length) + selectedIndex
+            const completedResult = await executeRemoteImageTask({
+              jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
+              model: draft.model,
+              prompt: composePrompt([draft.globalPrompt, assignment.composedPrompt]),
+              aspectRatio: resolveAspectRatio(draft.size || '1:1'),
+              imageSize: resolveImageSize(draft.model),
+              filePaths: [sourceFilePath],
+              outputDirectory,
+              onProgress: async ({ progress, status }) => {
+                await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+              }
+            })
+            const savedImage = completedResult.results?.[0]
+            if (!savedImage) {
+              throw new Error(`${assignment.name} 未返回可用图片`)
+            }
 
-        return {
-          assignmentId: assignment.id,
-          output: createSeriesOutputFromSavedImage(savedImage, {
-            id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-            title: assignment.outputTitle,
-            model: draft.model,
-            sourceTag: 'generated'
-          })
-        }
-      })
+            return {
+              assignmentId: assignment.id,
+              output: createSeriesOutputFromSavedImage(savedImage, {
+                id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
+                title: assignment.outputTitle,
+                model: draft.model,
+                sourceTag: 'generated'
+              })
+            }
+          }
+        }),
+        SERIES_GROUP_CONCURRENCY
+      )
 
       generatedItems.forEach((item) => {
         generatedReplacementMap.set(item.assignmentId, item.output)
@@ -717,32 +752,37 @@ function createStudioImageGenerationService({
     const groupedResults = []
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
-      const outputs = await mapWithConcurrency(outputDescriptors, async (promptAssignment, outputIndex) => {
-        const subtaskIndex = (batchIndex * generateCount) + outputIndex
-        const completedResult = await executeRemoteImageTask({
-          jobLabel: `series-generate-${batchIndex + 1}-${outputIndex + 1}`,
-          model: draft.model,
-          prompt: composePrompt([draft.globalPrompt, promptAssignment.composedPrompt]),
-          aspectRatio: draft.size || '1:1',
-          imageSize: resolveImageSize(draft.model),
-          filePaths: [sourceFilePath],
-          outputDirectory,
-          onProgress: async ({ progress, status }) => {
-            await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
-          }
-        })
-        const savedImage = completedResult.results?.[0]
-        if (!savedImage) {
-          throw new Error(`第 ${batchIndex + 1} 组结果 ${outputIndex + 1} 未返回可用图片`)
-        }
+      const outputs = await runTasksWithConcurrency(
+        outputDescriptors.map((promptAssignment, outputIndex) => {
+          return async () => {
+            const subtaskIndex = (batchIndex * generateCount) + outputIndex
+            const completedResult = await executeRemoteImageTask({
+              jobLabel: `series-generate-${batchIndex + 1}-${outputIndex + 1}`,
+              model: draft.model,
+              prompt: composePrompt([draft.globalPrompt, promptAssignment.composedPrompt]),
+              aspectRatio: resolveAspectRatio(draft.size || '1:1'),
+              imageSize: resolveImageSize(draft.model),
+              filePaths: [sourceFilePath],
+              outputDirectory,
+              onProgress: async ({ progress, status }) => {
+                await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+              }
+            })
+            const savedImage = completedResult.results?.[0]
+            if (!savedImage) {
+              throw new Error(`第 ${batchIndex + 1} 组结果 ${outputIndex + 1} 未返回可用图片`)
+            }
 
-        return createSeriesOutputFromSavedImage(savedImage, {
-          id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
-          title: promptAssignment.outputTitle,
-          model: draft.model,
-          sourceTag: 'generated'
-        })
-      })
+            return createSeriesOutputFromSavedImage(savedImage, {
+              id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
+              title: promptAssignment.outputTitle,
+              model: draft.model,
+              sourceTag: 'generated'
+            })
+          }
+        }),
+        SERIES_GROUP_CONCURRENCY
+      )
 
       groupedResults.push({
         id: `${taskId}-series-generate-group-${batchIndex + 1}`,
@@ -828,7 +868,8 @@ module.exports = {
   SERIES_DESIGN_SOFT_WEIGHT,
   SERIES_DESIGN_HARD_WEIGHT,
   SERIES_GENERATE_SOFT_TOTAL,
-  SERIES_GENERATE_HARD_TOTAL,
+  SERIES_GROUP_CONCURRENCY,
+  MAX_SERIES_GENERATE_GROUP_SIZE,
   normalizeSingleImageModels,
   createStudioImageGenerationService
 }

@@ -115,9 +115,25 @@ function goToNextPage() {
         </div>
 
         <footer class="task-pagination">
-          <button class="secondary-action" type="button" :disabled="currentPage === 1" @click="goToPreviousPage">上一页</button>
+          <button
+            class="secondary-action pagination-arrow-button"
+            type="button"
+            aria-label="上一页"
+            :disabled="currentPage === 1"
+            @click="goToPreviousPage"
+          >
+            <span class="pagination-arrow-button__triangle pagination-arrow-button__triangle--left"></span>
+          </button>
           <span>第 {{ currentPage }} / {{ totalPages }} 页 · 10 个任务</span>
-          <button class="secondary-action" type="button" :disabled="currentPage === totalPages" @click="goToNextPage">下一页</button>
+          <button
+            class="secondary-action pagination-arrow-button"
+            type="button"
+            aria-label="下一页"
+            :disabled="currentPage === totalPages"
+            @click="goToNextPage"
+          >
+            <span class="pagination-arrow-button__triangle pagination-arrow-button__triangle--right"></span>
+          </button>
         </footer>
       </section>
     </section>

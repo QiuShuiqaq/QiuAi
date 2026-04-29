@@ -154,7 +154,7 @@ describe('studioWorkspaceService', () => {
     const snapshot = service.getSnapshot()
 
     expect(snapshot.themeMode).toBe('dark')
-    expect(snapshot.themeOptions.map((item) => item.value)).toEqual(['dark', 'light', 'eye-care'])
+    expect(snapshot.themeOptions.map((item) => item.value)).toEqual(['dark'])
     expect(snapshot.menuItems.map((item) => item.key)).toEqual([
       'workspace',
       'single-image',
@@ -182,7 +182,7 @@ describe('studioWorkspaceService', () => {
     expect(snapshot.formDrafts['single-design'].sourceImage).toBe(null)
     expect(snapshot.formDrafts['single-design'].model).toBe('gpt-image-2')
     expect(snapshot.formDrafts['series-design'].imageAssignments).toEqual([])
-    expect(snapshot.formDrafts['series-generate'].promptAssignments).toHaveLength(4)
+    expect(snapshot.formDrafts['series-generate'].promptAssignments).toHaveLength(20)
     expect(snapshot.workspaceDashboard).not.toHaveProperty('copywritingStats')
     expect(snapshot.workspaceDashboard.singleImageStats.title).toBe('单图测试统计')
     expect(snapshot.workspaceDashboard.singleDesignStats.title).toBe('单图设计统计')
@@ -193,6 +193,127 @@ describe('studioWorkspaceService', () => {
     expect(snapshot.settingsSummary.activeApiKeyIndex).toBe(0)
     expect(snapshot.hostInfo.systemName).toBeTruthy()
     expect(snapshot.hostInfo.runtimeName).toContain('Node')
+  })
+
+  it('clears runtime drafts and cached results while preserving task history', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService, STUDIO_WORKSPACE_KEY } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    store.set(STUDIO_WORKSPACE_KEY, {
+      formDrafts: {
+        'single-design': {
+          prompt: '自定义商品主图',
+          model: 'nano-banana-fast',
+          taskName: 'NeedReset',
+          sourceImage: {
+            name: 'product.png',
+            path: 'C:/input/product.png'
+          },
+          quantity: 1,
+          size: '16:9',
+          notes: '保留高光'
+        }
+      },
+      resultsByMenu: {
+        'single-design': {
+          textResults: [],
+          comparisonResults: [
+            {
+              id: 'cached-result-1',
+              model: 'nano-banana-fast',
+              title: '旧缓存结果',
+              preview: createPreviewDataUrl('old-cache')
+            }
+          ],
+          groupedResults: [],
+          summary: null
+        }
+      },
+      exportItemsByMenu: {
+        'single-design': [
+          {
+            id: 'cached-export-1',
+            name: 'OldFolder'
+          }
+        ]
+      },
+      tasks: [
+        {
+          id: 'legacy-task-store-1',
+          menuKey: 'single-design',
+          status: '已完成',
+          progress: 100,
+          createdAt: '2026-04-29 10:00:00'
+        }
+      ]
+    })
+
+    const settingsService = createSettingsStoreService({ store })
+    const taskManagerService = {
+      listTasks: () => [
+        {
+          id: 'history-task-1',
+          menuKey: 'single-design',
+          status: '已完成',
+          progress: 100,
+          createdAt: '2026-04-29 10:00:00'
+        }
+      ]
+    }
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      taskManagerService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    const cleared = await service.clearRuntimeState()
+    const snapshot = service.getSnapshot()
+
+    expect(cleared.cleared).toBe(true)
+    expect(snapshot.formDrafts['single-design'].taskName).toBe('')
+    expect(snapshot.formDrafts['single-design'].sourceImage).toBe(null)
+    expect(snapshot.formDrafts['single-design'].size).toBe('1:1')
+    expect(snapshot.resultsByMenu['single-design'].comparisonResults).toEqual([])
+    expect(snapshot.exportItemsByMenu['single-design']).toEqual([])
+    expect(snapshot.tasks).toHaveLength(1)
+    expect(snapshot.tasks[0].id).toBe('history-task-1')
+  })
+
+  it('rejects one-key cleanup while active studio tasks are still running', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    const taskManagerService = {
+      listTasks: () => [
+        {
+          id: 'running-task-1',
+          menuKey: 'series-generate',
+          status: '进行中',
+          progress: 45,
+          createdAt: '2026-04-29 12:00:00'
+        }
+      ]
+    }
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      taskManagerService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    await expect(service.clearRuntimeState()).rejects.toThrow('当前存在进行中的任务，暂不能一键清理')
   })
 
   it('persists image drafts, creates grouped tasks, and stores export folders by module', async () => {

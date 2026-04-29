@@ -1,0 +1,50 @@
+QiuAi 启动说明
+
+一、项目位置
+项目根目录：
+F:\ProgramDevelopment\VSCODE\vscode\VSCode2026.4\workspace\QiuAi
+
+二、首次启动
+1. 打开 PowerShell
+2. 进入项目目录：
+cd F:\ProgramDevelopment\VSCODE\vscode\VSCode2026.4\workspace\QiuAi
+3. 如果还没有安装依赖，执行：
+npm install
+4. 启动项目：
+npm run dev
+
+三、日常启动
+以后每次启动只需要执行：
+
+cd F:\ProgramDevelopment\VSCODE\vscode\VSCode2026.4\workspace\QiuAi
+npm run dev
+
+四、启动后会发生什么
+1. Vite 前端开发服务会启动，默认端口为 5173
+2. Electron 桌面窗口会自动打开
+3. 关闭当前 PowerShell 窗口，会同时停止项目
+
+五、如果窗口没有自动弹出
+先看当前终端里有没有报错信息。
+常见原因：
+1. 5173 端口被占用
+2. 依赖没有安装完整
+3. 上一次运行残留进程没有退出
+
+六、常用排查命令
+1. 重新安装依赖：
+npm install
+
+2. 检查代码是否有问题：
+npm test
+npm run lint
+
+3. 如果需要强制停止当前运行：
+直接关闭 PowerShell 窗口，或者按：
+Ctrl + C
+
+七、注意
+1. 启动命令必须在 QiuAi 根目录下执行
+2. 不要在 .worktrees 目录里启动正式项目
+3. 正式使用时，默认数据目录在：
+QiuAi\DATA

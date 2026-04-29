@@ -3,12 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 describe('styles source', () => {
-  it('contains fixed shell, internal scroll areas and three themes', () => {
+  it('contains fixed shell, internal scroll areas and only the dark theme', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/assets/styles.css'), 'utf8')
 
     expect(source).toContain("[data-theme='dark']")
-    expect(source).toContain("[data-theme='light']")
-    expect(source).toContain("[data-theme='eye-care']")
+    expect(source).not.toContain("[data-theme='light']")
+    expect(source).not.toContain("[data-theme='eye-care']")
     expect(source).toContain('.app-shell')
     expect(source).toContain('flex-direction: column;')
     expect(source).toContain('height: 100vh;')
@@ -25,6 +25,10 @@ describe('styles source', () => {
     expect(source).toContain('overflow: hidden;')
     expect(source).toContain('.module-scroll')
     expect(source).toContain('overflow: hidden;')
+    expect(source).toContain('.topbar-contact-actions')
+    expect(source).toContain('.topbar-contact-button')
+    expect(source).toContain('.contact-preview-modal')
+    expect(source).toContain('.contact-preview-modal__image-grid')
     expect(source).toContain('.scrollbar-hidden')
     expect(source).toContain('.scrollbar-hidden::-webkit-scrollbar')
     expect(source).toContain('.panel-content--scrollable')
@@ -59,6 +63,10 @@ describe('styles source', () => {
     expect(source).toContain('.task-progress__bar')
     expect(source).toContain('.task-list--paged')
     expect(source).toContain('.task-pagination')
+    expect(source).toContain('.pagination-arrow-button')
+    expect(source).toContain('.pagination-arrow-button__triangle')
+    expect(source).toContain('.pagination-arrow-button__triangle--left')
+    expect(source).toContain('.pagination-arrow-button__triangle--right')
     expect(source).toContain('.task-sidebar-empty')
     expect(source).toContain('.task-sidebar-shell--card')
     expect(source).toContain('@media (max-width: 1680px)')
@@ -88,6 +96,10 @@ describe('styles source', () => {
     expect(source).toContain('justify-content: flex-end;')
     expect(source).toContain('.comparison-grid')
     expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));')
+    expect(source).toContain('.comparison-grid--adaptive')
+    expect(source).toContain('.comparison-card--adaptive')
+    expect(source).toContain('aspect-ratio: auto;')
+    expect(source).toContain('object-fit: contain;')
     expect(source).toContain('.group-output-grid--scroll')
     expect(source).toContain('.result-group-card__elapsed')
     expect(source).toContain('grid-auto-flow: column;')

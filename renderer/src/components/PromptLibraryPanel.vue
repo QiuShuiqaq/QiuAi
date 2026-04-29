@@ -14,6 +14,10 @@ const props = defineProps({
 
 const emit = defineEmits(['save-template', 'remove-template'])
 const fixedTemplateDrafts = ref([])
+const expandedFixedTemplateIds = ref([])
+const expandedStoredTemplateIds = ref([])
+
+// 固定按钮模板：商品主图 / 详情图 / 细节图 / 尺寸图 / 白底图 / 颜色图
 
 const customDraft = reactive({
   id: '',
@@ -95,6 +99,34 @@ function removeCustomTemplate(templateId) {
     resetCustomDraft()
   }
 }
+
+function toggleTemplateExpansion(templateId) {
+  if (!templateId) {
+    return
+  }
+
+  expandedFixedTemplateIds.value = expandedFixedTemplateIds.value.includes(templateId)
+    ? expandedFixedTemplateIds.value.filter((item) => item !== templateId)
+    : [...expandedFixedTemplateIds.value, templateId]
+}
+
+function toggleStoredTemplateExpansion(templateId) {
+  if (!templateId) {
+    return
+  }
+
+  expandedStoredTemplateIds.value = expandedStoredTemplateIds.value.includes(templateId)
+    ? expandedStoredTemplateIds.value.filter((item) => item !== templateId)
+    : [...expandedStoredTemplateIds.value, templateId]
+}
+
+function isTemplateExpanded(templateId) {
+  return expandedFixedTemplateIds.value.includes(templateId)
+}
+
+function isStoredTemplateExpanded(templateId) {
+  return expandedStoredTemplateIds.value.includes(templateId)
+}
 </script>
 
 <template>
@@ -106,37 +138,47 @@ function removeCustomTemplate(templateId) {
       </div>
     </header>
 
-    <div class="panel-content panel-content--display-scroll scrollbar-hidden">
+    <div class="panel-content panel-content--prompt-library">
       <section class="prompt-library-grid">
         <article class="prompt-library-column">
           <div class="prompt-library-column__header">
             <h3>按钮提示词</h3>
-            <span class="section-copy">
-              system-fixed / 商品主图 / 详情图 / 细节图 / 尺寸图 / 白底图 / 颜色图
-            </span>
           </div>
 
-          <div class="prompt-library-list">
-            <div
-              v-for="template in fixedTemplateDrafts"
-              :key="template.id"
-              class="prompt-template-row"
-            >
-              <div class="prompt-template-row__preview">
-                <span>按钮预览</span>
-                <button class="secondary-action prompt-template-preview-button" type="button">
-                  {{ template.name || '未命名按钮' }}
+          <div class="prompt-library-column__body scrollbar-hidden">
+            <div class="prompt-library-list">
+              <section
+                v-for="template in fixedTemplateDrafts"
+                :key="template.id"
+                class="prompt-template-disclosure"
+              >
+                <button
+                  class="prompt-template-disclosure__summary"
+                  type="button"
+                  @click="toggleTemplateExpansion(template.id)"
+                >
+                  <strong>{{ template.name || '未命名按钮' }}</strong>
+                  <span>{{ isTemplateExpanded(template.id) ? '收起' : '展开' }}</span>
                 </button>
-              </div>
-              <label class="form-field">
-                <span>按钮名称</span>
-                <input v-model="template.name" type="text" placeholder="输入按钮名称" />
-              </label>
-              <label class="form-field prompt-template-row__prompt">
-                <span>提示词</span>
-                <textarea v-model="template.prompt" rows="4" placeholder="输入按钮对应的固定提示词"></textarea>
-              </label>
-              <button class="primary-action" type="button" @click="saveFixedTemplate(template)">保存按钮提示词</button>
+
+                <div v-if="isTemplateExpanded(template.id)" class="prompt-template-disclosure__content">
+                  <div class="prompt-template-row__preview">
+                    <span>按钮预览</span>
+                    <button class="secondary-action prompt-template-preview-button" type="button">
+                      {{ template.name || '未命名按钮' }}
+                    </button>
+                  </div>
+                  <label class="form-field">
+                    <span>按钮名称</span>
+                    <input v-model="template.name" type="text" placeholder="输入按钮名称" />
+                  </label>
+                  <label class="form-field prompt-template-row__prompt">
+                    <span>提示词</span>
+                    <textarea v-model="template.prompt" rows="4" placeholder="输入按钮对应的固定提示词"></textarea>
+                  </label>
+                  <button class="primary-action" type="button" @click="saveFixedTemplate(template)">保存按钮提示词</button>
+                </div>
+              </section>
             </div>
           </div>
         </article>
@@ -147,37 +189,38 @@ function removeCustomTemplate(templateId) {
             <button class="secondary-action" type="button" @click="resetCustomDraft">新建自定义模板</button>
           </div>
 
-          <div class="prompt-library-list">
-            <button
-              v-for="template in customPromptTemplates"
-              :key="template.id"
-              class="prompt-template-row prompt-template-row--button"
-              type="button"
-              @click="applyCustomTemplate(template)"
-            >
-              <strong>{{ template.name }}</strong>
-              <span>{{ template.category }}</span>
-            </button>
-          </div>
-
-          <div class="prompt-template-editor">
-            <label class="form-field">
-              <span>模板名称</span>
-              <input v-model="customDraft.name" type="text" />
-            </label>
-            <label class="form-field">
-              <span>分类</span>
-              <input v-model="customDraft.category" type="text" />
-            </label>
-            <label class="form-field">
-              <span>提示词</span>
-              <textarea v-model="customDraft.prompt" rows="6"></textarea>
-            </label>
-            <div class="prompt-template-editor__actions">
-              <button class="primary-action" type="button" @click="saveCustomTemplate">保存模板</button>
-              <button class="secondary-action" type="button" :disabled="!customDraft.id" @click="removeCustomTemplate(customDraft.id)">删除模板</button>
+          <div class="prompt-library-column__body scrollbar-hidden prompt-library-column__body--stacked">
+            <div class="prompt-template-editor">
+              <label class="form-field">
+                <span>模板名称</span>
+                <input v-model="customDraft.name" type="text" />
+              </label>
+              <label class="form-field">
+                <span>分类</span>
+                <input v-model="customDraft.category" type="text" />
+              </label>
+              <label class="form-field">
+                <span>提示词</span>
+                <textarea v-model="customDraft.prompt" rows="6"></textarea>
+              </label>
+              <div class="prompt-template-editor__actions">
+                <button class="primary-action" type="button" @click="saveCustomTemplate">保存模板</button>
+                <button class="secondary-action" type="button" :disabled="!customDraft.id" @click="removeCustomTemplate(customDraft.id)">删除模板</button>
+              </div>
             </div>
-            <span class="section-copy">custom</span>
+
+            <div class="prompt-library-list">
+              <button
+                v-for="template in customPromptTemplates"
+                :key="template.id"
+                class="prompt-template-row prompt-template-row--button"
+                type="button"
+                @click="applyCustomTemplate(template)"
+              >
+                <strong>{{ template.name }}</strong>
+                <span>{{ template.category }}</span>
+              </button>
+            </div>
           </div>
         </article>
 
@@ -189,19 +232,31 @@ function removeCustomTemplate(templateId) {
             </div>
           </div>
 
-          <div class="prompt-library-list scrollbar-hidden">
-            <article
-              v-for="template in sortedStoredTemplates"
-              :key="`stored-${template.id}`"
-              class="prompt-storage-card"
-            >
-              <div class="prompt-storage-card__header">
-                <strong>{{ template.name || '未命名模板' }}</strong>
-                <span>{{ template.sourceLabel }}</span>
-              </div>
-              <small>{{ template.category || '未分类' }}</small>
-              <p>{{ template.prompt || '暂无提示词内容' }}</p>
-            </article>
+          <div class="prompt-library-column__body scrollbar-hidden">
+            <div class="prompt-library-list">
+              <section
+                v-for="template in sortedStoredTemplates"
+                :key="`stored-${template.id}`"
+                class="prompt-storage-card"
+              >
+                <button
+                  class="prompt-storage-card__summary"
+                  type="button"
+                  @click="toggleStoredTemplateExpansion(template.id)"
+                >
+                  <strong>{{ template.name || '未命名模板' }}</strong>
+                  <span>{{ isStoredTemplateExpanded(template.id) ? '收起' : '展开' }}</span>
+                </button>
+
+                <div v-if="isStoredTemplateExpanded(template.id)" class="prompt-storage-card__content">
+                  <div class="prompt-storage-card__header">
+                    <span>{{ template.sourceLabel }}</span>
+                    <small>{{ template.category || '未分类' }}</small>
+                  </div>
+                  <p>{{ template.prompt || '暂无提示词内容' }}</p>
+                </div>
+              </section>
+            </div>
           </div>
         </article>
       </section>

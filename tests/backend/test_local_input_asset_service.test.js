@@ -5,6 +5,7 @@ describe('localInputAssetService', () => {
     const {
       listSupportedImageFiles,
       listSupportedImageFilesFromDirectory,
+      describeSupportedImageFiles,
       toDataUrl
     } = await import('../../main/src/services/localInputAssetService.js')
 
@@ -40,6 +41,27 @@ describe('localInputAssetService', () => {
     expect(files).toEqual([
       'C:\\images\\a.png',
       'C:\\images\\c.jpeg'
+    ])
+
+    const describedFiles = await describeSupportedImageFiles([
+      'C:/images/a.png',
+      'C:/images/ignore.txt',
+      'C:/images/c.jpeg'
+    ], {
+      stat: async () => ({ size: 2048 })
+    })
+
+    expect(describedFiles).toEqual([
+      {
+        name: 'a.png',
+        path: 'C:/images/a.png',
+        size: 2048
+      },
+      {
+        name: 'c.jpeg',
+        path: 'C:/images/c.jpeg',
+        size: 2048
+      }
     ])
   })
 })

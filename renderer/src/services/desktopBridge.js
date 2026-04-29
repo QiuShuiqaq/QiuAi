@@ -10,6 +10,13 @@ const defaultBrowserSettings = {
   apiKey: '',
   defaultSize: '1:1',
   downloadDirectory: '',
+  globalUploadDirectory: '',
+  uploadDirectories: {
+    'single-image': '',
+    'single-design': '',
+    'series-design': '',
+    'series-generate': ''
+  },
   themeMode: 'dark'
 }
 
@@ -137,6 +144,25 @@ function normalizeActiveApiKeyIndex (activeApiKeyIndex = 0) {
   return numericIndex
 }
 
+function normalizeThemeMode () {
+  return 'dark'
+}
+
+function normalizeUploadDirectories (uploadDirectories = {}) {
+  const source = uploadDirectories && typeof uploadDirectories === 'object' ? uploadDirectories : {}
+
+  return {
+    'single-image': typeof source['single-image'] === 'string' ? source['single-image'] : '',
+    'single-design': typeof source['single-design'] === 'string' ? source['single-design'] : '',
+    'series-design': typeof source['series-design'] === 'string' ? source['series-design'] : '',
+    'series-generate': typeof source['series-generate'] === 'string' ? source['series-generate'] : ''
+  }
+}
+
+function normalizeGlobalUploadDirectory (globalUploadDirectory = '') {
+  return typeof globalUploadDirectory === 'string' ? globalUploadDirectory : ''
+}
+
 function normalizeBrowserSettings (rawSettings = {}) {
   const mergedSettings = {
     ...defaultBrowserSettings,
@@ -151,6 +177,9 @@ function normalizeBrowserSettings (rawSettings = {}) {
 
   return {
     ...mergedSettings,
+    themeMode: normalizeThemeMode(mergedSettings.themeMode),
+    globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
+    uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
     apiKeys,
     activeApiKeyIndex,
     apiKey: apiKeys[activeApiKeyIndex] || ''
@@ -177,6 +206,13 @@ function saveBrowserSettings (payload = {}) {
   const nextSettings = normalizeBrowserSettings({
     ...currentSettings,
     ...payload,
+    globalUploadDirectory: Object.prototype.hasOwnProperty.call(payload, 'globalUploadDirectory')
+      ? normalizeGlobalUploadDirectory(payload.globalUploadDirectory)
+      : normalizeGlobalUploadDirectory(currentSettings.globalUploadDirectory),
+    uploadDirectories: {
+      ...normalizeUploadDirectories(currentSettings.uploadDirectories),
+      ...normalizeUploadDirectories(payload.uploadDirectories)
+    },
     activeApiKeyIndex,
     apiKeys
   })
@@ -191,7 +227,7 @@ function getBrowserStudioSnapshot () {
   return {
     ...defaultBrowserStudioSnapshot,
     ...savedSnapshot,
-    themeMode: settings.themeMode || savedSnapshot.themeMode || 'dark',
+    themeMode: normalizeThemeMode(settings.themeMode || savedSnapshot.themeMode || 'dark'),
     settingsSummary: {
       apiKeys: settings.apiKeys,
       activeApiKeyIndex: settings.activeApiKeyIndex
@@ -216,6 +252,21 @@ function saveBrowserStudioDraft (payload = {}) {
 
   writeBrowserState(BROWSER_STUDIO_KEY, nextSnapshot)
   return nextSnapshot.formDrafts[menuKey]
+}
+
+function clearBrowserStudioRuntimeState () {
+  const snapshot = getBrowserStudioSnapshot()
+  const nextSnapshot = {
+    ...defaultBrowserStudioSnapshot,
+    tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : [],
+    settingsSummary: snapshot.settingsSummary || defaultBrowserStudioSnapshot.settingsSummary,
+    hostInfo: snapshot.hostInfo || defaultBrowserStudioSnapshot.hostInfo
+  }
+
+  writeBrowserState(BROWSER_STUDIO_KEY, nextSnapshot)
+  return {
+    cleared: true
+  }
 }
 
 function getBrowserPromptTemplates() {
@@ -369,6 +420,17 @@ export function createStudioTask (payload) {
   return invoke(getChannel('STUDIO_CREATE_TASK'), payload)
 }
 
+export function pickStudioInputAssets (payload) {
+  if (!hasBridge()) {
+    return Promise.resolve({
+      canceled: true,
+      files: []
+    })
+  }
+
+  return invoke(getChannel('STUDIO_PICK_INPUT_ASSETS'), payload)
+}
+
 export function openOutputDirectory (payload) {
   return invoke(getChannel('STUDIO_OPEN_OUTPUT_DIRECTORY'), payload)
 }
@@ -379,4 +441,12 @@ export function exportStudioResults (payload) {
 
 export function deleteStudioExportItem (payload) {
   return invoke(getChannel('STUDIO_DELETE_EXPORT_ITEM'), payload)
+}
+
+export function clearStudioRuntimeState () {
+  if (!hasBridge()) {
+    return Promise.resolve(clearBrowserStudioRuntimeState())
+  }
+
+  return invoke(getChannel('STUDIO_CLEAR_RUNTIME_STATE'))
 }

@@ -61,7 +61,11 @@ function registerIpc () {
     messageRecorder: dataTraceService,
     runtimeLogger: dataTraceService
   })
-  registerStudioIpc({ studioWorkspaceService })
+  registerStudioIpc({
+    studioWorkspaceService,
+    settingsService,
+    dataTraceService
+  })
 
   return {
     studioTaskManagerService,

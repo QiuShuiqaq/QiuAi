@@ -14,6 +14,20 @@ async function listSupportedImageFilesFromDirectory (directoryPath, { readdir = 
     .map((entry) => path.resolve(directoryPath, entry.name)))
 }
 
+async function describeSupportedImageFiles (filePaths = [], { stat = fs.stat } = {}) {
+  const supportedPaths = listSupportedImageFiles(filePaths)
+  const files = await Promise.all(supportedPaths.map(async (filePath) => {
+    const fileStat = await stat(filePath)
+    return {
+      name: path.basename(filePath),
+      path: filePath,
+      size: Number(fileStat.size) || 0
+    }
+  }))
+
+  return files
+}
+
 async function toDataUrl ({ filePath, mimeType }, { readFile = fs.readFile } = {}) {
   const buffer = await readFile(filePath)
   return `data:${mimeType};base64,${buffer.toString('base64')}`
@@ -34,6 +48,7 @@ module.exports = {
   supportedExtensions,
   listSupportedImageFiles,
   listSupportedImageFilesFromDirectory,
+  describeSupportedImageFiles,
   toDataUrl,
   getMimeTypeFromPath
 }

@@ -113,6 +113,45 @@ describe('studioImageGenerationService', () => {
     expect(result.comparisonResults[0].title).toBe('nano-banana-fast 设计结果')
   })
 
+  it('maps single-design preset size labels to supported remote aspect ratios', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ aspectRatio }) => ({
+      id: `remote-single-design-preset-${createDrawTaskDependency.mock.calls.length}`,
+      aspectRatio
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    await service.generateImageResults({
+      menuKey: 'single-design',
+      taskId: 'task-single-design-a4',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        prompt: '生成一张适合详情页打印稿的商品图',
+        notes: '',
+        sourceImage: null,
+        size: 'a4-portrait'
+      }
+    })
+
+    await service.generateImageResults({
+      menuKey: 'single-design',
+      taskId: 'task-single-design-8k',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        prompt: '生成一张适合大屏展示的商品图',
+        notes: '',
+        sourceImage: null,
+        size: '8k-landscape'
+      }
+    })
+
+    expect(createDrawTaskDependency.mock.calls[0][0].aspectRatio).toBe('3:4')
+    expect(createDrawTaskDependency.mock.calls[1][0].aspectRatio).toBe('16:9')
+  })
+
   it('rejects series-design drafts that do not provide a full set of image types for selected images', async () => {
     const service = createService()
 
@@ -307,7 +346,44 @@ describe('studioImageGenerationService', () => {
     expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
   })
 
-  it('runs series-generate groups serially with at most 5 concurrent jobs per group', async () => {
+  it('supports series-generate group sizes above 20 and preserves all outputs', async () => {
+    const generateCount = 25
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-over-20',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一高级电商详情页风格',
+        generateCount,
+        batchCount: 1,
+        promptAssignments: Array.from({ length: generateCount }, (_unused, index) => ({
+          index: index + 1,
+          prompt: `提示词-${index + 1}`,
+          imageType: index % 2 === 0 ? '商品主图' : '详情图'
+        })),
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(generateCount)
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0].outputs).toHaveLength(generateCount)
+  })
+
+  it('runs series-generate groups serially with exactly 5 concurrent jobs per group when enough tasks exist', async () => {
     const generateCount = 8
     const batchCount = 2
     const firstGroupSize = generateCount
@@ -346,6 +422,7 @@ describe('studioImageGenerationService', () => {
     let secondGroupStartedAtCompletionCount = -1
     let activeBeforeSecondGroupStart = -1
     let finishedBeforeSecondGroupStart = []
+    let activeBeforeFirstCompletion = -1
 
     const createDrawTaskDependency = vi.fn(async () => {
       startedCount += 1
@@ -366,6 +443,9 @@ describe('studioImageGenerationService', () => {
     })
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
       await completionGates.get(id)?.promise
+      if (activeBeforeFirstCompletion === -1) {
+        activeBeforeFirstCompletion = activeCount
+      }
       activeCount -= 1
       completedCount += 1
       finishedJobIds.push(id)
@@ -409,6 +489,9 @@ describe('studioImageGenerationService', () => {
       }
     })
     const totalJobs = generateCount * batchCount
+    await waitForStartedJobsAtLeast(5)
+    expect(startedJobIds).toHaveLength(5)
+    expect(activeCount).toBe(5)
     for (let index = 0; index < totalJobs; index += 1) {
       await waitForStartedJobsAtLeast(index + 1)
       completionGates.get(startedJobIds[index])?.resolve()
@@ -421,8 +504,8 @@ describe('studioImageGenerationService', () => {
     expect(secondGroupStartedAtCompletionCount).toBe(firstGroupSize)
     expect(activeBeforeSecondGroupStart).toBe(0)
     expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, firstGroupSize))
-    expect(maxConcurrent).toBeGreaterThan(1)
-    expect(maxConcurrent).toBeLessThanOrEqual(5)
+    expect(activeBeforeFirstCompletion).toBe(5)
+    expect(maxConcurrent).toBe(5)
   })
 
   it('uses edited fixed prompt templates from the prompt library when composing image-type prompts', async () => {

@@ -50,9 +50,34 @@ describe('desktopBridge', () => {
     const loaded = await getSettings()
 
     expect(saved.apiKeys[0]).toBe('sk-browser')
-    expect(saved.themeMode).toBe('light')
+    expect(saved.themeMode).toBe('dark')
     expect(loaded.apiKeys[0]).toBe('sk-browser')
     expect(storage.get('qiuai-browser-settings')).toContain('sk-browser')
+  })
+
+  it('keeps browser upload directories isolated per menu', async () => {
+    const storage = new Map()
+    window.localStorage = {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, value)
+      }
+    }
+
+    const { getSettings, saveSettings } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await saveSettings({
+      uploadDirectories: {
+        'single-image': 'E:/QiuAi/Input/SingleImage'
+      }
+    })
+
+    const loaded = await getSettings()
+
+    expect(loaded.uploadDirectories['single-image']).toBe('E:/QiuAi/Input/SingleImage')
+    expect(loaded.uploadDirectories['single-design']).toBe('')
   })
 
   it('serializes reactive payloads before invoking the electron bridge', async () => {
@@ -119,5 +144,45 @@ describe('desktopBridge', () => {
       menuKey: 'single-image',
       exportItemId: 'single-export-folder-1'
     })
+  })
+
+  it('invokes the studio input picker channel through the desktop bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue({ canceled: false, files: [] })
+
+    window.qiuai = {
+      channels: {
+        STUDIO_PICK_INPUT_ASSETS: 'studio:pick-input-assets'
+      },
+      invoke
+    }
+
+    const { pickStudioInputAssets } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await pickStudioInputAssets({
+      menuKey: 'series-design',
+      allowMultiple: true
+    })
+
+    expect(invoke).toHaveBeenCalledWith('studio:pick-input-assets', {
+      menuKey: 'series-design',
+      allowMultiple: true
+    })
+  })
+
+  it('invokes the studio clear runtime channel through the desktop bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue({ cleared: true })
+
+    window.qiuai = {
+      channels: {
+        STUDIO_CLEAR_RUNTIME_STATE: 'studio:clear-runtime-state'
+      },
+      invoke
+    }
+
+    const { clearStudioRuntimeState } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await clearStudioRuntimeState()
+
+    expect(invoke).toHaveBeenCalledWith('studio:clear-runtime-state', undefined)
   })
 })

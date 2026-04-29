@@ -9,7 +9,7 @@ describe('Settings page source', () => {
     expect(source).toContain('API Key')
     expect(source).toContain('界面主题')
     expect(source).toContain('夜间科技')
-    expect(source).toContain('明亮护眼')
+    expect(source).not.toContain('明亮护眼')
     expect(source).toContain('保存设置')
     expect(source).toContain('output 文件夹')
   })
