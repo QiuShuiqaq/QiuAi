@@ -69,6 +69,9 @@ const modelPricingCatalog = [
   { name: 'nano-banana-pro-vip', credits: '10000 / 次' },
   { name: 'nano-banana-pro-4k-vip', credits: '16000 / 次' }
 ]
+const modelCreditCostMap = Object.fromEntries(modelPricingCatalog.map((item) => {
+  return [item.name, Number.parseInt(String(item.credits), 10) || 0]
+}))
 
 const batchOptions = [
   { label: '单批 4 个结果', value: 'batch-4' },
@@ -91,6 +94,8 @@ const taskMenuMapByCategory = {
   套图设计: 'series-design',
   套图生成: 'series-generate'
 }
+const CREDIT_ACTIVITY_HISTORY_LIMIT = 20
+const REQUEST_METRIC_HISTORY_LIMIT = 24
 const workspaceDashboardSections = [
   { cardKey: 'singleImageStats', menuKey: 'single-image', title: '单图测试统计' },
   { cardKey: 'seriesDesignStats', menuKey: 'series-design', title: '套图设计统计' },
@@ -404,13 +409,45 @@ function createDefaultTasks() {
   return []
 }
 
+function createDefaultRequestMetrics() {
+  return []
+}
+
 function createDefaultState() {
   return {
     formDrafts: createDefaultDrafts(),
     resultsByMenu: createDefaultResultsByMenu(),
     exportItemsByMenu: createDefaultExportItemsByMenu(),
-    tasks: createDefaultTasks()
+    tasks: createDefaultTasks(),
+    requestMetrics: createDefaultRequestMetrics()
   }
+}
+
+function normalizeRequestMetricEntry(entry = {}) {
+  return {
+    id: typeof entry.id === 'string' ? entry.id : '',
+    createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : '',
+    method: typeof entry.method === 'string' ? entry.method : 'POST',
+    requestPath: typeof entry.requestPath === 'string' ? entry.requestPath : '',
+    elapsedMs: Math.max(0, Number(entry.elapsedMs) || 0),
+    requestStatus: entry.requestStatus === 'failed' ? 'failed' : 'success'
+  }
+}
+
+function normalizeRequestMetrics(requestMetrics = []) {
+  return Array.isArray(requestMetrics)
+    ? requestMetrics
+      .map((entry) => normalizeRequestMetricEntry(entry))
+      .filter((entry) => entry.requestPath)
+      .slice(0, REQUEST_METRIC_HISTORY_LIMIT)
+    : createDefaultRequestMetrics()
+}
+
+function appendRequestMetric(requestMetrics = [], entry = {}) {
+  return [
+    normalizeRequestMetricEntry(entry),
+    ...normalizeRequestMetrics(requestMetrics)
+  ].slice(0, REQUEST_METRIC_HISTORY_LIMIT)
 }
 
 function listDirectoryEntriesSync(directoryPath, {
@@ -561,7 +598,8 @@ function mergeStudioState(savedState = {}) {
           : (defaultState.exportItemsByMenu[item.key] || [])
       ]
     })),
-    tasks: Array.isArray(savedState.tasks) ? savedState.tasks : defaultState.tasks
+    tasks: Array.isArray(savedState.tasks) ? savedState.tasks : defaultState.tasks,
+    requestMetrics: normalizeRequestMetrics(savedState.requestMetrics)
   }
 }
 
@@ -614,16 +652,205 @@ function buildWorkspaceStatsCard({ state, tasks = [], menuKey, title }) {
   }
 }
 
-function buildWorkspaceDashboard(state, tasks = []) {
-  return Object.fromEntries(workspaceDashboardSections.map((section) => [
-    section.cardKey,
-    buildWorkspaceStatsCard({
-      state,
-      tasks,
-      menuKey: section.menuKey,
-      title: section.title
-    })
-  ]))
+function normalizeCreditStateForDisplay(creditState = {}) {
+  const source = creditState && typeof creditState === 'object' ? creditState : {}
+
+  return {
+    totalPurchasedCredits: Math.max(0, Number(source.totalPurchasedCredits) || 0),
+    remainingCredits: Math.max(0, Number(source.remainingCredits) || 0),
+    frozenCredits: Math.max(0, Number(source.frozenCredits) || 0),
+    usedCredits: Math.max(0, Number(source.usedCredits) || 0),
+    lastAdjustmentAt: typeof source.lastAdjustmentAt === 'string' ? source.lastAdjustmentAt : '',
+    lastAdjustmentOperation: typeof source.lastAdjustmentOperation === 'string' ? source.lastAdjustmentOperation : '',
+    lastAdjustmentAmount: Math.max(0, Number(source.lastAdjustmentAmount) || 0),
+    adjustmentHistory: Array.isArray(source.adjustmentHistory) ? source.adjustmentHistory.slice() : [],
+    activityHistory: Array.isArray(source.activityHistory)
+      ? source.activityHistory.slice(0, CREDIT_ACTIVITY_HISTORY_LIMIT).map((entry = {}) => ({
+          id: typeof entry.id === 'string' ? entry.id : '',
+          type: typeof entry.type === 'string' ? entry.type : '',
+          operation: entry.operation === 'decrease' ? 'decrease' : 'increase',
+          amount: Math.max(0, Number(entry.amount) || 0),
+          createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : '',
+          note: typeof entry.note === 'string' ? entry.note : '',
+          taskId: typeof entry.taskId === 'string' ? entry.taskId : '',
+          taskNumber: typeof entry.taskNumber === 'string' ? entry.taskNumber : '',
+          taskName: typeof entry.taskName === 'string' ? entry.taskName : '',
+          menuKey: typeof entry.menuKey === 'string' ? entry.menuKey : '',
+          modelSummary: typeof entry.modelSummary === 'string' ? entry.modelSummary : ''
+        }))
+      : [],
+    taskLedger: source.taskLedger && typeof source.taskLedger === 'object' ? { ...source.taskLedger } : {}
+  }
+}
+
+function resolveModelCreditCost(modelName = '') {
+  return modelCreditCostMap[modelName] || 0
+}
+
+function estimateTaskCredits(menuKey, draft = {}) {
+  if (menuKey === 'single-image') {
+    return normalizeCompareModels(draft.compareModels).reduce((total, modelName) => {
+      return total + resolveModelCreditCost(modelName)
+    }, 0)
+  }
+
+  if (menuKey === 'single-design') {
+    return resolveModelCreditCost(draft.model)
+  }
+
+  if (menuKey === 'series-design') {
+    const selectedCount = resolveSeriesSelectedAssignmentCount(draft)
+    return selectedCount * Math.max(1, Number(draft.batchCount) || 1) * resolveModelCreditCost(draft.model)
+  }
+
+  if (menuKey === 'series-generate') {
+    return resolveGroupImageCount(menuKey, draft) * Math.max(1, Number(draft.batchCount) || 1) * resolveModelCreditCost(draft.model)
+  }
+
+  return 0
+}
+
+function buildCreditOverview(settings = {}) {
+  const creditState = normalizeCreditStateForDisplay(settings.creditState)
+  const baseModelCreditCost = resolveModelCreditCost('gpt-image-2') || 600
+  const latestAdjustmentLabel = creditState.lastAdjustmentAt
+    ? `${creditState.lastAdjustmentOperation === 'decrease' ? '扣减' : '增加'} ${creditState.lastAdjustmentAmount}`
+    : '--'
+
+  return {
+    title: '积分仪表盘',
+    items: [
+      { label: '剩余积分', value: String(creditState.remainingCredits) },
+      { label: '冻结积分', value: String(creditState.frozenCredits) },
+      { label: '已用积分', value: String(creditState.usedCredits) },
+      { label: '累计充值积分', value: String(creditState.totalPurchasedCredits) },
+      { label: '最近调整', value: latestAdjustmentLabel },
+      { label: '按 gpt-image-2 约可生成', value: String(Math.floor(creditState.remainingCredits / baseModelCreditCost)) }
+    ]
+  }
+}
+
+function appendCreditActivity(creditState, activityEntry = {}) {
+  return [
+    {
+      id: String(activityEntry.id || ''),
+      type: String(activityEntry.type || ''),
+      operation: activityEntry.operation === 'decrease' ? 'decrease' : 'increase',
+      amount: Math.max(0, Number(activityEntry.amount) || 0),
+      createdAt: String(activityEntry.createdAt || ''),
+      note: String(activityEntry.note || ''),
+      taskId: String(activityEntry.taskId || ''),
+      taskNumber: String(activityEntry.taskNumber || ''),
+      taskName: String(activityEntry.taskName || ''),
+      menuKey: String(activityEntry.menuKey || ''),
+      modelSummary: String(activityEntry.modelSummary || '')
+    },
+    ...(Array.isArray(creditState.activityHistory) ? creditState.activityHistory : [])
+  ].slice(0, CREDIT_ACTIVITY_HISTORY_LIMIT)
+}
+
+function resolveCreditActivityLabel(item = {}) {
+  if (item.type === 'manual_increase') {
+    return '手动增加积分'
+  }
+  if (item.type === 'manual_decrease') {
+    return '手动扣减积分'
+  }
+  if (item.type === 'task_freeze') {
+    return '任务冻结积分'
+  }
+  if (item.type === 'task_settle') {
+    return '任务消耗积分'
+  }
+  if (item.type === 'task_refund') {
+    return '任务返还积分'
+  }
+  return '积分变动'
+}
+
+function resolveCreditActivityDescription(item = {}) {
+  if (item.taskNumber || item.taskName) {
+    const taskHeader = [item.taskNumber, item.taskName].filter(Boolean).join(' / ')
+    const modelText = item.modelSummary ? ` · ${item.modelSummary}` : ''
+    return `${taskHeader || '任务'}${modelText}`
+  }
+
+  return item.note || '本地积分流水'
+}
+
+function buildCreditMessages(settings = {}) {
+  const creditState = normalizeCreditStateForDisplay(settings.creditState)
+
+  return {
+    title: '积分消息记录',
+    items: creditState.activityHistory.map((item) => ({
+      ...item,
+      label: resolveCreditActivityLabel(item),
+      description: resolveCreditActivityDescription(item),
+      amountDisplay: `${item.operation === 'decrease' ? '-' : '+'}${item.amount}`
+    }))
+  }
+}
+
+function formatMonitorTimeLabel(dateValue = '') {
+  const date = new Date(dateValue)
+  if (Number.isNaN(date.getTime())) {
+    return '--:--:--'
+  }
+
+  return [
+    String(date.getHours()).padStart(2, '0'),
+    String(date.getMinutes()).padStart(2, '0'),
+    String(date.getSeconds()).padStart(2, '0')
+  ].join(':')
+}
+
+function buildNetworkMonitor(state = {}) {
+  const requestMetrics = normalizeRequestMetrics(state.requestMetrics).sort((left, right) => {
+    const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0
+    const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0
+    return rightTime - leftTime
+  })
+  const totalCount = requestMetrics.length
+  const successCount = requestMetrics.filter((item) => item.requestStatus === 'success').length
+  const averageLatencyMs = totalCount
+    ? Math.round(requestMetrics.reduce((sum, item) => sum + item.elapsedMs, 0) / totalCount)
+    : 0
+
+  return {
+    title: '网络监控',
+    items: requestMetrics.slice(0, 12).map((item) => ({
+      id: item.id,
+      createdAt: item.createdAt,
+      timeLabel: formatMonitorTimeLabel(item.createdAt),
+      method: item.method || 'POST',
+      requestPath: item.requestPath,
+      elapsedMs: item.elapsedMs,
+      status: item.requestStatus
+    })),
+    summary: {
+      latestLatencyMs: requestMetrics[0]?.elapsedMs || 0,
+      averageLatencyMs,
+      successRate: totalCount ? `${Math.round((successCount / totalCount) * 100)}%` : '0%'
+    }
+  }
+}
+
+function buildWorkspaceDashboard(state, tasks = [], settings = {}) {
+  return {
+    ...Object.fromEntries(workspaceDashboardSections.map((section) => [
+      section.cardKey,
+      buildWorkspaceStatsCard({
+        state,
+        tasks,
+        menuKey: section.menuKey,
+        title: section.title
+      })
+    ])),
+    creditOverview: buildCreditOverview(settings),
+    creditMessages: buildCreditMessages(settings),
+    networkMonitor: buildNetworkMonitor(state)
+  }
 }
 
 function safeResolveUserName() {
@@ -650,7 +877,8 @@ function buildHostInfo() {
 function buildSettingsSummary(settings = {}) {
   return {
     apiKeys: Array.isArray(settings.apiKeys) ? settings.apiKeys.slice(0, 2) : ['', ''],
-    activeApiKeyIndex: Number.isInteger(settings.activeApiKeyIndex) ? settings.activeApiKeyIndex : 0
+    activeApiKeyIndex: Number.isInteger(settings.activeApiKeyIndex) ? settings.activeApiKeyIndex : 0,
+    creditState: normalizeCreditStateForDisplay(settings.creditState)
   }
 }
 
@@ -1187,6 +1415,7 @@ function buildTaskRecord({
   batchCount,
   status,
   progress,
+  estimatedCredits = 0,
   error = '',
   groupImageCount = 0,
   totalSubtaskCount = 0,
@@ -1208,6 +1437,7 @@ function buildTaskRecord({
     batchCount,
     status,
     progress,
+    estimatedCredits,
     createdAt,
     inputDirectory,
     outputDirectory,
@@ -1245,6 +1475,7 @@ function buildQueuedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '等待中',
     progress: 0,
+    estimatedCredits: estimateTaskCredits(menuKey, draft),
     ...groupedProgress
   })
 }
@@ -1292,6 +1523,7 @@ function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, input
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '已完成',
     progress: 100,
+    estimatedCredits: estimateTaskCredits(menuKey, draft),
     ...groupedProgress
   })
 }
@@ -1314,8 +1546,143 @@ function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
     status: '失败',
     progress: 100,
+    estimatedCredits: estimateTaskCredits(menuKey, draft),
     error: errorMessage,
     ...groupedProgress
+  })
+}
+
+function buildTaskLedgerEntry({ taskId, taskNumber, menuKey, draft = {}, estimatedCredits = 0, createdAt, status }) {
+  return {
+    taskId,
+    taskNumber,
+    menuKey,
+    taskName: String(draft.taskName || ''),
+    modelSummary: resolveTaskModelSummary(menuKey, draft),
+    estimatedCredits: Math.max(0, Number(estimatedCredits) || 0),
+    status,
+    createdAt,
+    updatedAt: createdAt
+  }
+}
+
+function freezeCreditsForTask({ creditState, taskId, taskNumber, menuKey, draft, estimatedCredits, createdAt }) {
+  const normalizedCreditState = normalizeCreditStateForDisplay(creditState)
+  const normalizedEstimatedCredits = Math.max(0, Number(estimatedCredits) || 0)
+
+  if (!normalizedEstimatedCredits) {
+    return normalizedCreditState
+  }
+
+  if (normalizedCreditState.remainingCredits < normalizedEstimatedCredits) {
+    throw new Error(`积分不足：当前可用 ${normalizedCreditState.remainingCredits}，需要 ${normalizedEstimatedCredits}`)
+  }
+
+  const modelSummary = resolveTaskModelSummary(menuKey, draft)
+
+  return normalizeCreditStateForDisplay({
+    ...normalizedCreditState,
+    remainingCredits: normalizedCreditState.remainingCredits - normalizedEstimatedCredits,
+    frozenCredits: normalizedCreditState.frozenCredits + normalizedEstimatedCredits,
+    activityHistory: appendCreditActivity(normalizedCreditState, {
+      id: `task-freeze-${taskId}-${createdAt}`,
+      type: 'task_freeze',
+      operation: 'decrease',
+      amount: normalizedEstimatedCredits,
+      createdAt,
+      taskId,
+      taskNumber,
+      taskName: String(draft.taskName || ''),
+      menuKey,
+      modelSummary
+    }),
+    taskLedger: {
+      ...normalizedCreditState.taskLedger,
+      [taskId]: buildTaskLedgerEntry({
+        taskId,
+        taskNumber,
+        menuKey,
+        draft,
+        modelSummary,
+        estimatedCredits: normalizedEstimatedCredits,
+        createdAt,
+        status: 'frozen'
+      })
+    }
+  })
+}
+
+function settleCreditsForTask({ creditState, taskId, updatedAt }) {
+  const normalizedCreditState = normalizeCreditStateForDisplay(creditState)
+  const currentLedger = normalizedCreditState.taskLedger[taskId]
+
+  if (!currentLedger || currentLedger.status === 'settled') {
+    return normalizedCreditState
+  }
+
+  const estimatedCredits = Math.max(0, Number(currentLedger.estimatedCredits) || 0)
+
+  return normalizeCreditStateForDisplay({
+    ...normalizedCreditState,
+    frozenCredits: Math.max(0, normalizedCreditState.frozenCredits - estimatedCredits),
+    usedCredits: normalizedCreditState.usedCredits + estimatedCredits,
+    activityHistory: appendCreditActivity(normalizedCreditState, {
+      id: `task-settle-${taskId}-${updatedAt}`,
+      type: 'task_settle',
+      operation: 'decrease',
+      amount: estimatedCredits,
+      createdAt: updatedAt,
+      taskId,
+      taskNumber: currentLedger.taskNumber,
+      taskName: currentLedger.taskName,
+      menuKey: currentLedger.menuKey,
+      modelSummary: currentLedger.modelSummary
+    }),
+    taskLedger: {
+      ...normalizedCreditState.taskLedger,
+      [taskId]: {
+        ...currentLedger,
+        status: 'settled',
+        updatedAt
+      }
+    }
+  })
+}
+
+function refundCreditsForTask({ creditState, taskId, updatedAt }) {
+  const normalizedCreditState = normalizeCreditStateForDisplay(creditState)
+  const currentLedger = normalizedCreditState.taskLedger[taskId]
+
+  if (!currentLedger || currentLedger.status === 'refunded') {
+    return normalizedCreditState
+  }
+
+  const estimatedCredits = Math.max(0, Number(currentLedger.estimatedCredits) || 0)
+
+  return normalizeCreditStateForDisplay({
+    ...normalizedCreditState,
+    remainingCredits: normalizedCreditState.remainingCredits + estimatedCredits,
+    frozenCredits: Math.max(0, normalizedCreditState.frozenCredits - estimatedCredits),
+    activityHistory: appendCreditActivity(normalizedCreditState, {
+      id: `task-refund-${taskId}-${updatedAt}`,
+      type: 'task_refund',
+      operation: 'increase',
+      amount: estimatedCredits,
+      createdAt: updatedAt,
+      taskId,
+      taskNumber: currentLedger.taskNumber,
+      taskName: currentLedger.taskName,
+      menuKey: currentLedger.menuKey,
+      modelSummary: currentLedger.modelSummary
+    }),
+    taskLedger: {
+      ...normalizedCreditState.taskLedger,
+      [taskId]: {
+        ...currentLedger,
+        status: 'refunded',
+        updatedAt
+      }
+    }
   })
 }
 
@@ -1348,7 +1715,18 @@ function createStudioWorkspaceService({
     settingsService,
     promptTemplateService,
     messageRecorder,
-    runtimeLogger
+    runtimeLogger,
+    requestMetricRecorder: async (metric) => {
+      const latestState = getStoredState()
+      saveState({
+        ...latestState,
+        requestMetrics: appendRequestMetric(latestState.requestMetrics, {
+          id: createId(),
+          createdAt: getNow(),
+          ...metric
+        })
+      })
+    }
   })
   const generateImageResultsDependency = generateImageResults || studioImageGenerationService.generateImageResults
   const queuedTaskExecutions = []
@@ -1582,6 +1960,15 @@ function createStudioWorkspaceService({
         }
       })
 
+      const settledCreditState = settleCreditsForTask({
+        creditState: settingsService.getSettings().creditState,
+        taskId,
+        updatedAt: getNow()
+      })
+      await settingsService.saveSettings({
+        creditState: settledCreditState
+      })
+
       await safeRuntimeLog(runtimeLogger, {
         level: 'info',
         event: 'studio-task-succeeded',
@@ -1603,6 +1990,15 @@ function createStudioWorkspaceService({
 
       await persistTaskAndState({
         task: failedTask
+      })
+
+      const refundedCreditState = refundCreditsForTask({
+        creditState: settingsService.getSettings().creditState,
+        taskId,
+        updatedAt: getNow()
+      })
+      await settingsService.saveSettings({
+        creditState: refundedCreditState
       })
 
       await safeRuntimeLog(runtimeLogger, {
@@ -1705,7 +2101,7 @@ function createStudioWorkspaceService({
       resultsByMenu: hydrateResultsByMenuForDisplay(state.resultsByMenu),
       exportItemsByMenu,
       tasks,
-      workspaceDashboard: buildWorkspaceDashboard(derivedState, tasks),
+      workspaceDashboard: buildWorkspaceDashboard(derivedState, tasks, settings),
       settingsSummary: buildSettingsSummary(settings),
       hostInfo: buildHostInfo()
     }
@@ -1731,12 +2127,14 @@ function createStudioWorkspaceService({
 
   async function createTask({ menuKey = 'workspace', draft: incomingDraft } = {}) {
     const state = getStoredState()
+    const settings = settingsService.getSettings()
     const taskId = createId()
     const taskNumber = createTaskNumber()
     const draft = normalizeDraftForMenu(menuKey, {
       ...(state.formDrafts[menuKey] || createDefaultDrafts()[menuKey] || {}),
       ...(incomingDraft || {})
     })
+    const estimatedCredits = estimateTaskCredits(menuKey, draft)
     const {
       inputDirectory,
       outputDirectory
@@ -1755,24 +2153,55 @@ function createStudioWorkspaceService({
       outputDirectory
     })
 
-    await persistTaskAndState({
-      task: queuedTask,
-      formDraftPatch: {
-        [menuKey]: draft
+    if (estimatedCredits > 0) {
+      const frozenCreditState = freezeCreditsForTask({
+        creditState: settings.creditState,
+        taskId,
+        taskNumber,
+        menuKey,
+        draft,
+        estimatedCredits,
+        createdAt
+      })
+
+      await settingsService.saveSettings({
+        creditState: frozenCreditState
+      })
+    }
+
+    try {
+      await persistTaskAndState({
+        task: queuedTask,
+        formDraftPatch: {
+          [menuKey]: draft
+        }
+      })
+
+      enqueueTaskExecution({
+        menuKey,
+        draft,
+        taskId,
+        taskNumber,
+        createdAt,
+        inputDirectory,
+        outputDirectory
+      })
+
+      return queuedTask
+    } catch (error) {
+      if (estimatedCredits > 0) {
+        const refundedCreditState = refundCreditsForTask({
+          creditState: settingsService.getSettings().creditState,
+          taskId,
+          updatedAt: getNow()
+        })
+        await settingsService.saveSettings({
+          creditState: refundedCreditState
+        })
       }
-    })
 
-    enqueueTaskExecution({
-      menuKey,
-      draft,
-      taskId,
-      taskNumber,
-      createdAt,
-      inputDirectory,
-      outputDirectory
-    })
-
-    return queuedTask
+      throw error
+    }
   }
 
   async function clearRuntimeState() {
@@ -1788,7 +2217,8 @@ function createStudioWorkspaceService({
       ...state,
       formDrafts: createDefaultDrafts(),
       resultsByMenu: createDefaultResultsByMenu(),
-      exportItemsByMenu: createDefaultExportItemsByMenu()
+      exportItemsByMenu: createDefaultExportItemsByMenu(),
+      requestMetrics: createDefaultRequestMetrics()
     })
     invalidateExportItemsCache()
 

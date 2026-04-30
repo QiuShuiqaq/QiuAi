@@ -103,28 +103,30 @@ function closeContactPreview() {
       </select>
     </label>
 
-    <button class="topbar-clean-button" type="button" aria-label="一键清理" @click="onCleanupClick">
-      一键清理
-    </button>
+    <div class="topbar-right-actions">
+      <div v-if="activationSummary" class="topbar-activation-pill">
+        <span>已激活</span>
+        <strong>{{ activationSummary.customerName || '已授权设备' }}</strong>
+      </div>
 
-    <div v-if="activationSummary" class="topbar-activation-pill">
-      <span>已激活</span>
-      <strong>{{ activationSummary.customerName || '已授权设备' }}</strong>
-    </div>
-
-    <div class="topbar-contact-actions">
-      <button
-        v-for="contact in contactGroups"
-        :key="contact.key"
-        class="topbar-contact-button"
-        type="button"
-        :aria-label="contact.label"
-        :title="contact.label"
-        @click="openContactPreview(contact.key)"
-      >
-        <img :src="contact.iconUrl" alt="" />
-        <span>{{ contact.label }}</span>
+      <button class="topbar-clean-button" type="button" aria-label="一键清理" @click="onCleanupClick">
+        一键清理
       </button>
+
+      <div class="topbar-contact-actions">
+        <button
+          v-for="contact in contactGroups"
+          :key="contact.key"
+          class="topbar-contact-button"
+          type="button"
+          :aria-label="contact.label"
+          :title="contact.label"
+          @click="openContactPreview(contact.key)"
+        >
+          <img :src="contact.iconUrl" alt="" />
+          <span>{{ contact.label }}</span>
+        </button>
+      </div>
     </div>
   </header>
 

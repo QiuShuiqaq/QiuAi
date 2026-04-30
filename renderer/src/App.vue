@@ -98,6 +98,7 @@ const ratioOptions = [
 const activeTheme = ref('dark')
 const activeMenu = ref('workspace')
 const isSavingApiConfig = ref(false)
+const isApplyingCreditAdjustment = ref(false)
 const selectedExportIds = ref([])
 const submitButtonState = ref('idle')
 const tasks = ref([])
@@ -117,9 +118,12 @@ const apiConfigDraft = reactive({
   apiKeys: ['', ''],
   activeApiKeyIndex: 0
 })
+const creditAdjustmentAmount = ref('')
+const totalCreditAmount = ref('')
 const uploadDirectoryDrafts = reactive(createEmptyUploadDirectoryDrafts())
 const activationState = ref(createDefaultActivationState())
 const isActivationLoading = ref(true)
+const isSavingTotalCredits = ref(false)
 let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
@@ -273,12 +277,35 @@ function createEmptyStatsCard(title) {
   }
 }
 
+function createEmptyCreditOverview() {
+  return {
+    title: '积分仪表盘',
+    items: [
+      { label: '剩余积分', value: '0' },
+      { label: '冻结积分', value: '0' },
+      { label: '已用积分', value: '0' },
+      { label: '累计充值积分', value: '0' },
+      { label: '最近调整', value: '--' },
+      { label: '按 gpt-image-2 约可生成', value: '0' }
+    ]
+  }
+}
+
+function createEmptyCreditMessages() {
+  return {
+    title: '积分消息记录',
+    items: []
+  }
+}
+
 function createEmptyWorkspaceDashboard() {
   return {
     seriesDesignStats: createEmptyStatsCard('套图设计统计'),
     singleImageStats: createEmptyStatsCard('单图测试统计'),
     singleDesignStats: createEmptyStatsCard('单图设计统计'),
-    seriesGenerateStats: createEmptyStatsCard('套图生成统计')
+    seriesGenerateStats: createEmptyStatsCard('套图生成统计'),
+    creditOverview: createEmptyCreditOverview(),
+    creditMessages: createEmptyCreditMessages()
   }
 }
 
@@ -569,6 +596,15 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
   if (!preserveUploadDirectoryDrafts) {
     const nextUploadDirectories = normalizeUploadDirectoryDrafts(settings.uploadDirectories)
     Object.assign(uploadDirectoryDrafts, nextUploadDirectories)
+  }
+
+  if (!totalCreditAmount.value || isSavingTotalCredits.value) {
+    const snapshotCreditItems = Array.isArray(snapshot.workspaceDashboard?.creditOverview?.items)
+      ? snapshot.workspaceDashboard.creditOverview.items
+      : []
+    const totalCreditItem = snapshotCreditItems.find((item) => item.label === '总积分' || item.label === '累计充值积分')
+    const resolvedTotalCredits = settings.creditState?.totalPurchasedCredits ?? totalCreditItem?.value ?? 0
+    totalCreditAmount.value = String(resolvedTotalCredits)
   }
 }
 
@@ -1338,6 +1374,113 @@ async function handleSaveApiConfig() {
   }
 }
 
+function handleCreditAdjustmentValueUpdate(value) {
+  creditAdjustmentAmount.value = String(value ?? '')
+}
+
+function handleTotalCreditValueUpdate(value) {
+  totalCreditAmount.value = String(value ?? '')
+}
+
+async function handleApplyCreditAdjustment(operation) {
+  const normalizedAmount = Number.parseInt(String(creditAdjustmentAmount.value || '').trim(), 10)
+
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: '积分调整失败：请输入大于 0 的积分数值'
+    })
+    return
+  }
+
+  isApplyingCreditAdjustment.value = true
+
+  try {
+    await saveSettings({
+      creditAdjustment: {
+        operation,
+        amount: normalizedAmount
+      }
+    })
+    creditAdjustmentAmount.value = ''
+    await loadStudioSnapshot({
+      preserveDrafts: true,
+      preserveApiConfig: true,
+      preserveUploadDirectoryDrafts: true
+    })
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: operation === 'decrease' ? '积分已扣减' : '积分已增加'
+    })
+  } catch (error) {
+    console.error('Failed to adjust credits', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `积分调整失败：${buildErrorMessage(error, '积分调整未完成')}`
+    })
+  } finally {
+    isApplyingCreditAdjustment.value = false
+  }
+}
+
+async function handleSaveTotalCredits() {
+  const normalizedTotalCredits = Number.parseInt(String(totalCreditAmount.value || '').trim(), 10)
+  const remainingCredits = Number.parseInt(String(
+    workspaceDashboard.value.creditOverview?.items?.find((item) => item.label === '剩余积分')?.value || '0'
+  ).replace(/[^\d]/g, ''), 10) || 0
+
+  if (!Number.isFinite(normalizedTotalCredits) || normalizedTotalCredits < 0) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: '总积分保存失败：请输入大于等于 0 的积分数值'
+    })
+    return
+  }
+
+  if (normalizedTotalCredits < remainingCredits) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: '总积分保存失败：总积分不能小于当前剩余积分'
+    })
+    return
+  }
+
+  isSavingTotalCredits.value = true
+
+  try {
+    await saveSettings({
+      creditState: {
+        totalPurchasedCredits: normalizedTotalCredits
+      }
+    })
+    totalCreditAmount.value = String(normalizedTotalCredits)
+    await loadStudioSnapshot({
+      preserveDrafts: true,
+      preserveApiConfig: true,
+      preserveUploadDirectoryDrafts: true
+    })
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: '总积分已保存'
+    })
+  } catch (error) {
+    console.error('Failed to save total credits', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `总积分保存失败：${buildErrorMessage(error, '总积分保存未完成')}`
+    })
+  } finally {
+    isSavingTotalCredits.value = false
+  }
+}
+
 async function handleSavePromptTemplate(payload) {
   try {
     await savePromptTemplate(payload)
@@ -1484,7 +1627,11 @@ onBeforeUnmount(() => {
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
           :api-config-state="apiConfigDraft"
+          :credit-adjustment-value="creditAdjustmentAmount"
+          :total-credits-value="totalCreditAmount"
           :is-saving-api-config="isSavingApiConfig"
+          :is-applying-credit-adjustment="isApplyingCreditAdjustment"
+          :is-saving-total-credits="isSavingTotalCredits"
           :fixed-prompt-templates="fixedPromptTemplates"
           :custom-prompt-templates="customPromptTemplates"
           @update-field="handleFieldUpdate"
@@ -1499,6 +1646,10 @@ onBeforeUnmount(() => {
           @update-api-key="handleApiKeyUpdate"
           @switch-api-key="handleSwitchApiKey"
           @save-api-config="handleSaveApiConfig"
+          @update-credit-adjustment="handleCreditAdjustmentValueUpdate"
+          @apply-credit-adjustment="handleApplyCreditAdjustment"
+          @update-total-credits="handleTotalCreditValueUpdate"
+          @save-total-credits="handleSaveTotalCredits"
           @save-prompt-template="handleSavePromptTemplate"
           @remove-prompt-template="handleRemovePromptTemplate"
           @update-upload-directory-draft="handleUploadDirectoryDraftUpdate"

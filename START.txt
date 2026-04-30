@@ -50,8 +50,9 @@ Ctrl + C
 QiuAi\DATA
 
 八、授权文件生成
-如果要为客户生成永久设备授权文件，在项目根目录执行：
+授权生成器已移出主项目，不在 QiuAi 项目内执行。
 
-npm run generate:license -- --customer "客户名称" --device "QAI-XXXX-XXXX-XXXX" --out .\license.qai
+独立工具目录：
+F:\ProgramDevelopment\VSCODE\vscode\VSCode2026.4\workspace\QiuAi-license-tools
 
-生成后会得到一个 `license.qai` 文件，发给客户在软件内导入即可。
+如需生成客户授权文件，请在该目录内单独运行授权工具。

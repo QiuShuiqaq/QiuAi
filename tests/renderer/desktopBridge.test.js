@@ -55,6 +55,58 @@ describe('desktopBridge', () => {
     expect(storage.get('qiuai-browser-settings')).toContain('sk-browser')
   })
 
+  it('applies browser-side credit adjustments when the desktop bridge is unavailable', async () => {
+    const storage = new Map()
+    window.localStorage = {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, value)
+      }
+    }
+
+    const { getSettings, saveSettings } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 1000
+      }
+    })
+
+    const loaded = await getSettings()
+
+    expect(loaded.creditState.remainingCredits).toBe(1000)
+    expect(loaded.creditState.totalPurchasedCredits).toBe(1000)
+  })
+
+  it('saves browser-side total credits directly when the desktop bridge is unavailable', async () => {
+    const storage = new Map()
+    window.localStorage = {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, value)
+      }
+    }
+
+    const { getSettings, saveSettings } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await saveSettings({
+      creditState: {
+        totalPurchasedCredits: 500,
+        remainingCredits: 300
+      }
+    })
+
+    const loaded = await getSettings()
+
+    expect(loaded.creditState.totalPurchasedCredits).toBe(500)
+    expect(loaded.creditState.remainingCredits).toBe(300)
+  })
+
   it('keeps browser upload directories isolated per menu', async () => {
     const storage = new Map()
     window.localStorage = {

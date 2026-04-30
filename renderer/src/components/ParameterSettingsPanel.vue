@@ -77,6 +77,9 @@ const seriesGenerateImageTypeOptions = [
 ]
 
 const uploadIconUrl = new URL('../../../icon/shangchuan.png', import.meta.url).href
+const saveDirectoryIconUrl = new URL('../../../icon/baocun.png', import.meta.url).href
+const promptTemplateIconUrl = new URL('../../../icon/moban.png', import.meta.url).href
+const promptImportIconUrl = new URL('../../../icon/daoru.png', import.meta.url).href
 const promptImportState = reactive({
   visible: false,
   targetKind: '',
@@ -259,7 +262,9 @@ function appendPromptTemplate(templatePrompt = '') {
               placeholder="默认打开目录"
               @input="emitUploadDirectoryDraft('single-image', $event.target.value)"
             />
-            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('single-image')">保存目录</button>
+            <button class="icon-action-button upload-directory-save" type="button" aria-label="保存目录" title="保存目录" @click="saveUploadDirectory('single-image')">
+              <img :src="saveDirectoryIconUrl" alt="" />
+            </button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -347,7 +352,9 @@ function appendPromptTemplate(templatePrompt = '') {
               placeholder="默认打开目录"
               @input="emitUploadDirectoryDraft('single-design', $event.target.value)"
             />
-            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('single-design')">保存目录</button>
+            <button class="icon-action-button upload-directory-save" type="button" aria-label="保存目录" title="保存目录" @click="saveUploadDirectory('single-design')">
+              <img :src="saveDirectoryIconUrl" alt="" />
+            </button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -411,7 +418,9 @@ function appendPromptTemplate(templatePrompt = '') {
               placeholder="默认打开目录"
               @input="emitUploadDirectoryDraft('series-design', $event.target.value)"
             />
-            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('series-design')">保存目录</button>
+            <button class="icon-action-button upload-directory-save" type="button" aria-label="保存目录" title="保存目录" @click="saveUploadDirectory('series-design')">
+              <img :src="saveDirectoryIconUrl" alt="" />
+            </button>
           </div>
         </section>
 
@@ -451,16 +460,21 @@ function appendPromptTemplate(templatePrompt = '') {
                 <label class="form-field">
                   <span>图片类型</span>
                   <div class="prompt-import-row">
-                    <select
-                      :value="assignment.imageType || ''"
-                      @change="updateAssignment(index, 'imageType', $event.target.value)"
-                    >
-                      <option value="">请选择图片类型</option>
-                      <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
-                        {{ type }}
-                      </option>
-                    </select>
-                    <button class="secondary-action" type="button" @click="openPromptImport('series-design', index)">导入</button>
+                    <div class="select-icon-field">
+                      <img class="select-icon-field__icon" :src="promptTemplateIconUrl" alt="" />
+                      <select
+                        :value="assignment.imageType || ''"
+                        @change="updateAssignment(index, 'imageType', $event.target.value)"
+                      >
+                        <option value="">请选择图片类型</option>
+                        <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
+                          {{ type }}
+                        </option>
+                      </select>
+                    </div>
+                    <button class="icon-action-button" type="button" aria-label="导入提示词模板" title="导入提示词模板" @click="openPromptImport('series-design', index)">
+                      <img :src="promptImportIconUrl" alt="" />
+                    </button>
                   </div>
                 </label>
                 <label class="form-field">
@@ -523,7 +537,9 @@ function appendPromptTemplate(templatePrompt = '') {
               placeholder="默认打开目录"
               @input="emitUploadDirectoryDraft('series-generate', $event.target.value)"
             />
-            <button class="secondary-action upload-directory-save" type="button" @click="saveUploadDirectory('series-generate')">保存目录</button>
+            <button class="icon-action-button upload-directory-save" type="button" aria-label="保存目录" title="保存目录" @click="saveUploadDirectory('series-generate')">
+              <img :src="saveDirectoryIconUrl" alt="" />
+            </button>
           </div>
           <article v-if="draftForm.sourceImage" class="asset-chip">
             <img v-if="draftForm.sourceImage.preview" :src="draftForm.sourceImage.preview" :alt="draftForm.sourceImage.name" class="asset-chip__preview" />
@@ -626,16 +642,21 @@ function appendPromptTemplate(templatePrompt = '') {
                     <label class="form-field">
                       <span>图片类型</span>
                       <div class="prompt-import-row">
-                        <select
-                          :value="assignment.imageType || ''"
-                          @change="updateSeriesGenerateAssignment(index, 'imageType', $event.target.value)"
-                        >
-                          <option value="">请选择图片类型</option>
-                          <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
-                            {{ type }}
-                          </option>
-                        </select>
-                        <button class="secondary-action" type="button" @click="openPromptImport('series-generate', index)">导入</button>
+                        <div class="select-icon-field">
+                          <img class="select-icon-field__icon" :src="promptTemplateIconUrl" alt="" />
+                          <select
+                            :value="assignment.imageType || ''"
+                            @change="updateSeriesGenerateAssignment(index, 'imageType', $event.target.value)"
+                          >
+                            <option value="">请选择图片类型</option>
+                            <option v-for="type in seriesGenerateImageTypeOptions" :key="type" :value="type">
+                              {{ type }}
+                            </option>
+                          </select>
+                        </div>
+                        <button class="icon-action-button" type="button" aria-label="导入提示词模板" title="导入提示词模板" @click="openPromptImport('series-generate', index)">
+                          <img :src="promptImportIconUrl" alt="" />
+                        </button>
                       </div>
                     </label>
                   </div>

@@ -18,7 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item'])
 
-const outputDirectoryIconUrl = new URL('../../../icon/baocun.png', import.meta.url).href
+const outputDirectoryIconUrl = new URL('../../../icon/wenjianjia.png', import.meta.url).href
 const downloadIconUrl = new URL('../../../icon/down.png', import.meta.url).href
 const deleteIconUrl = new URL('../../../icon/shanchu.png', import.meta.url).href
 const pageSize = 8
@@ -76,17 +76,20 @@ function goToNextPage() {
 
     <div class="module-scroll panel-content panel-content--export-scroll panel-content--with-footer scrollbar-hidden">
       <article v-for="item in pagedExportItems" :key="item.id" class="export-item">
-        <label class="export-item__label">
+        <label class="export-item__toggle">
           <input
             class="export-item__checkbox"
             :checked="selectedExportIds.includes(item.id)"
             type="checkbox"
             @change="toggleItem(item.id)"
           />
+        </label>
+
+        <label class="export-item__label">
           <span class="export-item__copy">
             <strong>{{ item.name }}</strong>
             <small>{{ item.type }} / {{ item.status }}</small>
-            <small>{{ `${item.itemCount || 0} 个结果文件` }}</small>
+            <small>{{ `${item.itemCount || 0} 个图片` }}</small>
           </span>
         </label>
 
@@ -102,7 +105,7 @@ function goToNextPage() {
             <img :src="outputDirectoryIconUrl" alt="" />
           </button>
           <button
-            class="icon-action-button icon-action-button--danger"
+            class="icon-action-button icon-action-button--danger export-item__action"
             type="button"
             aria-label="删除结果文件夹"
             title="删除结果文件夹"

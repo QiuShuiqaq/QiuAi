@@ -145,4 +145,50 @@ describe('settingsStoreService', () => {
       }
     })
   })
+
+  it('applies manual credit adjustments and keeps a local credit summary', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await service.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 20000000
+      }
+    }, {
+      getNow: () => '2026-04-29T12:00:00.000Z'
+    })
+
+    await service.saveSettings({
+      creditAdjustment: {
+        operation: 'decrease',
+        amount: 600
+      }
+    }, {
+      getNow: () => '2026-04-29T12:05:00.000Z'
+    })
+
+    expect(service.getSettings().creditState).toMatchObject({
+      totalPurchasedCredits: 20000000,
+      remainingCredits: 19999400,
+      frozenCredits: 0,
+      usedCredits: 0,
+      lastAdjustmentAt: '2026-04-29T12:05:00.000Z',
+      lastAdjustmentOperation: 'decrease'
+    })
+    expect(service.getSettings().creditState.adjustmentHistory).toHaveLength(2)
+    expect(service.getSettings().creditState.activityHistory).toHaveLength(2)
+    expect(service.getSettings().creditState.activityHistory[0].type).toBe('manual_decrease')
+    expect(service.getSettings().creditState.activityHistory[1].type).toBe('manual_increase')
+  })
 })

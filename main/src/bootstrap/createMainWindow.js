@@ -8,6 +8,7 @@ function createMainWindow () {
     minWidth: 1100,
     minHeight: 760,
     backgroundColor: '#f4ecdf',
+    icon: path.resolve(__dirname, '../../assets/app-icon.png'),
     webPreferences: {
       preload: path.resolve(__dirname, '../../preload.js'),
       contextIsolation: true,

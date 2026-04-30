@@ -27,6 +27,17 @@ function createMemoryStore() {
   }
 }
 
+async function seedCredits(settingsService, amount = 50000000) {
+  await settingsService.saveSettings({
+    creditAdjustment: {
+      operation: 'increase',
+      amount
+    }
+  }, {
+    getNow: () => '2026-04-29T00:00:00.000Z'
+  })
+}
+
 describe('studioWorkspaceService', () => {
   it('enqueues image tasks immediately and updates progress from remote callbacks', async () => {
     const store = createMemoryStore()
@@ -47,6 +58,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const generateImageResults = vi.fn(async ({ onProgress, taskId }) => {
       await onProgress({
         progress: 18,
@@ -140,6 +152,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -189,6 +202,13 @@ describe('studioWorkspaceService', () => {
     expect(snapshot.workspaceDashboard.seriesDesignStats.title).toBe('套图设计统计')
     expect(snapshot.workspaceDashboard.seriesGenerateStats.title).toBe('套图生成统计')
     expect(snapshot.workspaceDashboard.singleImageStats.items).toHaveLength(6)
+    expect(snapshot.workspaceDashboard.networkMonitor.title).toBe('网络监控')
+    expect(snapshot.workspaceDashboard.networkMonitor.items).toEqual([])
+    expect(snapshot.workspaceDashboard.networkMonitor.summary).toEqual({
+      averageLatencyMs: 0,
+      latestLatencyMs: 0,
+      successRate: '0%'
+    })
     expect(snapshot.settingsSummary.apiKeys).toEqual(['', ''])
     expect(snapshot.settingsSummary.activeApiKeyIndex).toBe(0)
     expect(snapshot.hostInfo.systemName).toBeTruthy()
@@ -324,6 +344,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const generateImageResults = vi.fn(async ({ menuKey, draft, taskId }) => {
       if (menuKey === 'single-image') {
         return {
@@ -662,6 +683,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -747,6 +769,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -909,6 +932,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -969,6 +993,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -990,6 +1015,7 @@ describe('studioWorkspaceService', () => {
     const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
 
     const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
     const service = createStudioWorkspaceService({
       store,
       settingsService,
@@ -1060,5 +1086,216 @@ describe('studioWorkspaceService', () => {
     expect(task.currentGroupIndex).toBe(0)
     expect(task.currentGroupCompletedCount).toBe(20)
     expect(task.currentGroupTotalCount).toBe(20)
+  })
+
+  it('builds network monitor card from recent request metrics', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService, STUDIO_WORKSPACE_KEY } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    store.set(STUDIO_WORKSPACE_KEY, {
+      requestMetrics: [
+        {
+          id: 'metric-1',
+          createdAt: '2026-04-30T10:10:00.000Z',
+          method: 'POST',
+          requestPath: '/v1/draw/result',
+          elapsedMs: 820,
+          requestStatus: 'success'
+        },
+        {
+          id: 'metric-2',
+          createdAt: '2026-04-30T10:11:00.000Z',
+          method: 'POST',
+          requestPath: '/v1/draw/completions',
+          elapsedMs: 1260,
+          requestStatus: 'failed'
+        }
+      ]
+    })
+
+    const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies()
+    })
+
+    const snapshot = service.getSnapshot()
+
+    expect(snapshot.workspaceDashboard.networkMonitor.title).toBe('网络监控')
+    expect(snapshot.workspaceDashboard.networkMonitor.items).toHaveLength(2)
+    expect(snapshot.workspaceDashboard.networkMonitor.items[0]).toMatchObject({
+      id: 'metric-2',
+      method: 'POST',
+      requestPath: '/v1/draw/completions',
+      elapsedMs: 1260,
+      status: 'failed'
+    })
+    expect(snapshot.workspaceDashboard.networkMonitor.summary).toEqual({
+      averageLatencyMs: 1040,
+      latestLatencyMs: 1260,
+      successRate: '50%'
+    })
+  })
+
+  it('freezes credits on task submit and settles them after success', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 5000
+      }
+    }, {
+      getNow: () => '2026-04-29T08:00:00.000Z'
+    })
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async ({ taskId, draft }) => ({
+        textResults: [],
+        comparisonResults: [
+          {
+            id: `${taskId}-single-design-1`,
+            model: draft.model,
+            title: '单图设计结果',
+            preview: createPreviewDataUrl('credit-success')
+          }
+        ],
+        groupedResults: [],
+        summary: {
+          title: '单图设计',
+          description: '积分结算测试'
+        }
+      }),
+      createId: () => 'credit-success-task-1',
+      createTaskNumber: () => 'QAI-20260429-0001',
+      getNow: () => '2026-04-29T08:10:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        taskName: 'CreditSuccess',
+        prompt: '生成一张高质量商品主图',
+        model: 'gpt-image-2'
+      }
+    })
+
+    const createdTask = await service.createTask({
+      menuKey: 'single-design'
+    })
+
+    expect(createdTask.estimatedCredits).toBe(600)
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 4400,
+      frozenCredits: 600,
+      usedCredits: 0
+    })
+
+    await service.waitForIdle()
+
+    const settledCreditState = settingsService.getSettings().creditState
+    const snapshot = service.getSnapshot()
+
+    expect(settledCreditState).toMatchObject({
+      remainingCredits: 4400,
+      frozenCredits: 0,
+      usedCredits: 600
+    })
+    expect(settledCreditState.taskLedger['credit-success-task-1']).toMatchObject({
+      status: 'settled',
+      estimatedCredits: 600
+    })
+    expect(settledCreditState.activityHistory.slice(0, 2).map((item) => item.type)).toEqual([
+      'task_settle',
+      'task_freeze'
+    ])
+    expect(snapshot.workspaceDashboard.creditOverview.title).toBe('积分仪表盘')
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('4400')
+    expect(snapshot.workspaceDashboard.creditMessages.title).toBe('积分消息记录')
+    expect(snapshot.workspaceDashboard.creditMessages.items[0]).toMatchObject({
+      type: 'task_settle',
+      taskNumber: 'QAI-20260429-0001'
+    })
+  })
+
+  it('refunds frozen credits when a queued task fails', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 5000
+      }
+    }, {
+      getNow: () => '2026-04-29T08:20:00.000Z'
+    })
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async () => {
+        throw new Error('远程接口异常')
+      },
+      createId: () => 'credit-failed-task-1',
+      createTaskNumber: () => 'QAI-20260429-0002',
+      getNow: () => '2026-04-29T08:30:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        taskName: 'CreditFailed',
+        prompt: '生成一张高质量商品主图',
+        model: 'gpt-image-2'
+      }
+    })
+
+    await service.createTask({
+      menuKey: 'single-design'
+    })
+
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 4400,
+      frozenCredits: 600,
+      usedCredits: 0
+    })
+
+    await service.waitForIdle()
+
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 5000,
+      frozenCredits: 0,
+      usedCredits: 0
+    })
+    expect(settingsService.getSettings().creditState.taskLedger['credit-failed-task-1']).toMatchObject({
+      status: 'refunded',
+      estimatedCredits: 600
+    })
+    expect(settingsService.getSettings().creditState.activityHistory.slice(0, 2).map((item) => item.type)).toEqual([
+      'task_refund',
+      'task_freeze'
+    ])
   })
 })

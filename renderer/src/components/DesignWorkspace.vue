@@ -85,7 +85,23 @@ defineProps({
     type: Object,
     required: true
   },
+  creditAdjustmentValue: {
+    type: String,
+    required: true
+  },
+  totalCreditsValue: {
+    type: String,
+    required: true
+  },
   isSavingApiConfig: {
+    type: Boolean,
+    required: true
+  },
+  isApplyingCreditAdjustment: {
+    type: Boolean,
+    required: true
+  },
+  isSavingTotalCredits: {
     type: Boolean,
     required: true
   },
@@ -114,6 +130,10 @@ const emit = defineEmits([
   'update-api-key',
   'switch-api-key',
   'save-api-config',
+  'update-credit-adjustment',
+  'apply-credit-adjustment',
+  'update-total-credits',
+  'save-total-credits',
   'save-prompt-template',
   'remove-prompt-template'
 ])
@@ -135,10 +155,18 @@ const emit = defineEmits([
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
           :api-config-state="apiConfigState"
+          :credit-adjustment-value="creditAdjustmentValue"
+          :total-credits-value="totalCreditsValue"
           :is-saving-api-config="isSavingApiConfig"
+          :is-applying-credit-adjustment="isApplyingCreditAdjustment"
+          :is-saving-total-credits="isSavingTotalCredits"
           @update-api-key="emit('update-api-key', $event)"
           @switch-api-key="emit('switch-api-key', $event)"
           @save-api-config="emit('save-api-config')"
+          @update-credit-adjustment="emit('update-credit-adjustment', $event)"
+          @apply-credit-adjustment="emit('apply-credit-adjustment', $event)"
+          @update-total-credits="emit('update-total-credits', $event)"
+          @save-total-credits="emit('save-total-credits')"
         />
       </section>
     </template>

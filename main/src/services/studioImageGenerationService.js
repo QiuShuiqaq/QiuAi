@@ -429,6 +429,7 @@ function createStudioImageGenerationService({
   settingsService,
   messageRecorder,
   runtimeLogger,
+  requestMetricRecorder,
   promptTemplateService = null,
   createHttpClientServiceDependency = createHttpClientService,
   createDrawTaskDependency = createDrawTask,
@@ -457,7 +458,8 @@ function createStudioImageGenerationService({
     const httpClient = createHttpClientServiceDependency({
       apiBaseUrl: settings.apiBaseUrl,
       apiKey,
-      messageRecorder
+      messageRecorder,
+      requestMetricRecorder
     })
     const urls = await createReferenceUrls(filePaths, {
       toDataUrlDependency,

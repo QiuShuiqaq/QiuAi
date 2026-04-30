@@ -2,6 +2,19 @@ const API_KEY_SLOT_COUNT = 2
 const BROWSER_SETTINGS_KEY = 'qiuai-browser-settings'
 const BROWSER_STUDIO_KEY = 'qiuai-browser-studio'
 const BROWSER_PROMPTS_KEY = 'qiuai-browser-prompts'
+const BROWSER_CREDIT_HISTORY_LIMIT = 20
+
+const defaultBrowserCreditState = {
+  totalPurchasedCredits: 0,
+  remainingCredits: 0,
+  frozenCredits: 0,
+  usedCredits: 0,
+  lastAdjustmentAt: '',
+  lastAdjustmentOperation: '',
+  lastAdjustmentAmount: 0,
+  adjustmentHistory: [],
+  taskLedger: {}
+}
 
 const defaultBrowserSettings = {
   apiBaseUrl: 'https://grsai.dakka.com.cn',
@@ -17,7 +30,8 @@ const defaultBrowserSettings = {
     'series-design': '',
     'series-generate': ''
   },
-  themeMode: 'dark'
+  themeMode: 'dark',
+  creditState: defaultBrowserCreditState
 }
 
 const defaultBrowserStudioSnapshot = {
@@ -30,7 +44,8 @@ const defaultBrowserStudioSnapshot = {
   hostInfo: {},
   settingsSummary: {
     apiKeys: ['', ''],
-    activeApiKeyIndex: 0
+    activeApiKeyIndex: 0,
+    creditState: defaultBrowserCreditState
   }
 }
 
@@ -171,6 +186,72 @@ function normalizeGlobalUploadDirectory (globalUploadDirectory = '') {
   return typeof globalUploadDirectory === 'string' ? globalUploadDirectory : ''
 }
 
+function normalizeNonNegativeInteger (value = 0) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return 0
+  }
+
+  return Math.round(numericValue)
+}
+
+function normalizeBrowserCreditState (rawCreditState = {}) {
+  const source = rawCreditState && typeof rawCreditState === 'object' ? rawCreditState : {}
+
+  return {
+    totalPurchasedCredits: normalizeNonNegativeInteger(source.totalPurchasedCredits),
+    remainingCredits: normalizeNonNegativeInteger(source.remainingCredits),
+    frozenCredits: normalizeNonNegativeInteger(source.frozenCredits),
+    usedCredits: normalizeNonNegativeInteger(source.usedCredits),
+    lastAdjustmentAt: typeof source.lastAdjustmentAt === 'string' ? source.lastAdjustmentAt : '',
+    lastAdjustmentOperation: typeof source.lastAdjustmentOperation === 'string' ? source.lastAdjustmentOperation : '',
+    lastAdjustmentAmount: normalizeNonNegativeInteger(source.lastAdjustmentAmount),
+    adjustmentHistory: Array.isArray(source.adjustmentHistory)
+      ? source.adjustmentHistory.slice(0, BROWSER_CREDIT_HISTORY_LIMIT)
+      : [],
+    taskLedger: source.taskLedger && typeof source.taskLedger === 'object' ? { ...source.taskLedger } : {}
+  }
+}
+
+function applyBrowserCreditAdjustment (creditState, adjustment = {}) {
+  const normalizedCreditState = normalizeBrowserCreditState(creditState)
+  const amount = normalizeNonNegativeInteger(adjustment.amount)
+
+  if (!amount) {
+    return normalizedCreditState
+  }
+
+  const operation = adjustment.operation === 'decrease' ? 'decrease' : 'increase'
+  if (operation === 'decrease' && normalizedCreditState.remainingCredits < amount) {
+    throw new Error('可用积分不足，无法扣减')
+  }
+
+  const createdAt = new Date().toISOString()
+
+  return normalizeBrowserCreditState({
+    ...normalizedCreditState,
+    totalPurchasedCredits: operation === 'increase'
+      ? normalizedCreditState.totalPurchasedCredits + amount
+      : normalizedCreditState.totalPurchasedCredits,
+    remainingCredits: operation === 'increase'
+      ? normalizedCreditState.remainingCredits + amount
+      : normalizedCreditState.remainingCredits - amount,
+    lastAdjustmentAt: createdAt,
+    lastAdjustmentOperation: operation,
+    lastAdjustmentAmount: amount,
+    adjustmentHistory: [
+      {
+        id: `browser-credit-adjustment-${createdAt}-${operation}`,
+        operation,
+        amount,
+        createdAt
+      },
+      ...normalizedCreditState.adjustmentHistory
+    ].slice(0, BROWSER_CREDIT_HISTORY_LIMIT)
+  })
+}
+
 function normalizeBrowserSettings (rawSettings = {}) {
   const mergedSettings = {
     ...defaultBrowserSettings,
@@ -188,6 +269,7 @@ function normalizeBrowserSettings (rawSettings = {}) {
     themeMode: normalizeThemeMode(mergedSettings.themeMode),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
+    creditState: normalizeBrowserCreditState(mergedSettings.creditState),
     apiKeys,
     activeApiKeyIndex,
     apiKey: apiKeys[activeApiKeyIndex] || ''
@@ -200,6 +282,10 @@ function getBrowserSettings () {
 
 function saveBrowserSettings (payload = {}) {
   const currentSettings = getBrowserSettings()
+  const {
+    creditAdjustment,
+    ...restPayload
+  } = payload || {}
   const activeApiKeyIndex = Object.prototype.hasOwnProperty.call(payload, 'activeApiKeyIndex')
     ? normalizeActiveApiKeyIndex(payload.activeApiKeyIndex)
     : currentSettings.activeApiKeyIndex
@@ -211,9 +297,20 @@ function saveBrowserSettings (payload = {}) {
     apiKeys[activeApiKeyIndex] = payload.apiKey
   }
 
+  let creditState = Object.prototype.hasOwnProperty.call(restPayload, 'creditState')
+    ? normalizeBrowserCreditState({
+        ...currentSettings.creditState,
+        ...restPayload.creditState
+      })
+    : normalizeBrowserCreditState(currentSettings.creditState)
+
+  if (creditAdjustment && typeof creditAdjustment === 'object') {
+    creditState = applyBrowserCreditAdjustment(creditState, creditAdjustment)
+  }
+
   const nextSettings = normalizeBrowserSettings({
     ...currentSettings,
-    ...payload,
+    ...restPayload,
     globalUploadDirectory: Object.prototype.hasOwnProperty.call(payload, 'globalUploadDirectory')
       ? normalizeGlobalUploadDirectory(payload.globalUploadDirectory)
       : normalizeGlobalUploadDirectory(currentSettings.globalUploadDirectory),
@@ -222,7 +319,8 @@ function saveBrowserSettings (payload = {}) {
       ...normalizeUploadDirectories(payload.uploadDirectories)
     },
     activeApiKeyIndex,
-    apiKeys
+    apiKeys,
+    creditState
   })
 
   return writeBrowserState(BROWSER_SETTINGS_KEY, nextSettings)
@@ -238,7 +336,8 @@ function getBrowserStudioSnapshot () {
     themeMode: normalizeThemeMode(settings.themeMode || savedSnapshot.themeMode || 'dark'),
     settingsSummary: {
       apiKeys: settings.apiKeys,
-      activeApiKeyIndex: settings.activeApiKeyIndex
+      activeApiKeyIndex: settings.activeApiKeyIndex,
+      creditState: settings.creditState
     }
   }
 }
