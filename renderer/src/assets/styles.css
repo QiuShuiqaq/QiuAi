@@ -656,6 +656,11 @@ textarea {
   align-items: center;
 }
 
+.task-card__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .task-category,
 .task-status {
   display: inline-flex;

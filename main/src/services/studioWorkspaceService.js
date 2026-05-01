@@ -1552,6 +1552,17 @@ function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt,
   })
 }
 
+function buildStoppedTaskSummary(task = {}, errorMessage = '用户手动结束任务') {
+  return {
+    ...task,
+    status: '失败',
+    progress: task.status === '等待中'
+      ? 0
+      : Math.max(0, Math.min(100, Number(task.progress) || 0)),
+    error: errorMessage
+  }
+}
+
 function buildTaskLedgerEntry({ taskId, taskNumber, menuKey, draft = {}, estimatedCredits = 0, createdAt, status }) {
   return {
     taskId,
@@ -1730,11 +1741,47 @@ function createStudioWorkspaceService({
   })
   const generateImageResultsDependency = generateImageResults || studioImageGenerationService.generateImageResults
   const queuedTaskExecutions = []
+  const activeTaskControllers = new Map()
   let isTaskQueueRunning = false
   let taskQueuePromise = Promise.resolve()
   let cachedExportItemsByMenu = null
   let cachedExportItemsAt = 0
   let isExportItemsCacheDirty = true
+
+  function createTaskExecutionController(taskId) {
+    let stopped = false
+    let stopReason = ''
+    let resolveStopSignal = null
+    const stopSignal = new Promise((resolve) => {
+      resolveStopSignal = resolve
+    })
+
+    return {
+      isStopped() {
+        return stopped
+      },
+      waitForStop() {
+        return stopSignal
+      },
+      stop(reason = '用户手动结束任务') {
+        if (stopped) {
+          return false
+        }
+
+        stopped = true
+        stopReason = reason || '用户手动结束任务'
+        resolveStopSignal?.({
+          stopped: true,
+          reason: stopReason,
+          taskId
+        })
+        return true
+      },
+      getReason() {
+        return stopReason || '用户手动结束任务'
+      }
+    }
+  }
 
   function invalidateExportItemsCache() {
     cachedExportItemsByMenu = null
@@ -1872,6 +1919,8 @@ function createStudioWorkspaceService({
     inputDirectory,
     outputDirectory
   }) {
+    const executionController = createTaskExecutionController(taskId)
+    activeTaskControllers.set(taskId, executionController)
     const runningTask = buildRunningTaskSummary({
       menuKey,
       draft,
@@ -1895,7 +1944,14 @@ function createStudioWorkspaceService({
         inputDirectory,
         outputDirectory
       })
+      if (executionController.isStopped()) {
+        return
+      }
       const handleTaskProgress = async ({ progress, status } = {}) => {
+        if (executionController.isStopped()) {
+          return
+        }
+
         const normalizedProgress = normalizeTaskProgress(progress, latestRunningTask.progress)
         const cappedProgress = status === 'succeeded'
           ? Math.min(99, normalizedProgress)
@@ -1914,10 +1970,33 @@ function createStudioWorkspaceService({
           task: latestRunningTask
         })
       }
-      const resultPayload = await buildResultPayload(menuKey, preparedDraft, taskId, outputDirectory, {
-        generateImageResults: generateImageResultsDependency,
-        onProgress: handleTaskProgress
-      })
+      const resultPayloadOutcome = await Promise.race([
+        Promise.resolve(buildResultPayload(menuKey, preparedDraft, taskId, outputDirectory, {
+          generateImageResults: generateImageResultsDependency,
+          onProgress: handleTaskProgress
+        })).then((resultPayload) => ({
+          type: 'result',
+          resultPayload
+        })).catch((error) => ({
+          type: 'error',
+          error
+        })),
+        executionController.waitForStop()
+      ])
+
+      if (resultPayloadOutcome?.stopped) {
+        return
+      }
+
+      if (resultPayloadOutcome?.type === 'error') {
+        throw resultPayloadOutcome.error
+      }
+
+      const resultPayload = resultPayloadOutcome.resultPayload
+      if (executionController.isStopped()) {
+        return
+      }
+
       const {
         exportItems,
         persistedResultPayload
@@ -1929,6 +2008,9 @@ function createStudioWorkspaceService({
         outputDirectory,
         writeFile
       })
+      if (executionController.isStopped()) {
+        return
+      }
       const executionCompletedAt = new Date(getNow()).getTime()
       const enrichedResultPayload = enrichResultPayloadSummary({
         menuKey,
@@ -2009,6 +2091,8 @@ function createStudioWorkspaceService({
         outputDirectory,
         error: error.message
       })
+    } finally {
+      activeTaskControllers.delete(taskId)
     }
   }
 
@@ -2035,6 +2119,57 @@ function createStudioWorkspaceService({
     if (!isTaskQueueRunning) {
       taskQueuePromise = processQueuedTasks()
     }
+  }
+
+  async function stopTask({ taskId = '' } = {}) {
+    const normalizedTaskId = String(taskId || '').trim()
+
+    if (!normalizedTaskId) {
+      throw new Error('任务 ID 不存在')
+    }
+
+    const targetTask = getStoredTasks().find((task) => task.id === normalizedTaskId)
+
+    if (!targetTask) {
+      throw new Error('未找到可结束的任务')
+    }
+
+    if (!['等待中', '进行中'].includes(targetTask.status)) {
+      throw new Error('只有等待中或进行中的任务可以结束')
+    }
+
+    for (let index = queuedTaskExecutions.length - 1; index >= 0; index -= 1) {
+      if (queuedTaskExecutions[index]?.taskId === normalizedTaskId) {
+        queuedTaskExecutions.splice(index, 1)
+      }
+    }
+
+    activeTaskControllers.get(normalizedTaskId)?.stop('用户手动结束任务')
+
+    const stoppedTask = buildStoppedTaskSummary(targetTask, '用户手动结束任务')
+
+    await persistTaskAndState({
+      task: stoppedTask
+    })
+
+    const refundedCreditState = refundCreditsForTask({
+      creditState: settingsService.getSettings().creditState,
+      taskId: normalizedTaskId,
+      updatedAt: getNow()
+    })
+    await settingsService.saveSettings({
+      creditState: refundedCreditState
+    })
+
+    await safeRuntimeLog(runtimeLogger, {
+      level: 'warn',
+      event: 'studio-task-stopped',
+      taskId: normalizedTaskId,
+      menuKey: targetTask.menuKey,
+      outputDirectory: targetTask.outputDirectory
+    })
+
+    return stoppedTask
   }
 
   function getStoredState() {
@@ -2365,6 +2500,7 @@ function createStudioWorkspaceService({
     getSnapshot,
     saveDraft,
     createTask,
+    stopTask,
     clearRuntimeState,
     deleteExportItem,
     exportSelectedResults,

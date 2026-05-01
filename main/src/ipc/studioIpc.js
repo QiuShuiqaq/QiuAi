@@ -35,6 +35,10 @@ function registerStudioIpc({ studioWorkspaceService, settingsService, dataTraceS
     return studioWorkspaceService.createTask(payload)
   })
 
+  ipcMain.handle(ipcChannels.STUDIO_STOP_TASK, async (_event, payload = {}) => {
+    return studioWorkspaceService.stopTask(payload)
+  })
+
   ipcMain.handle(ipcChannels.STUDIO_PICK_INPUT_ASSETS, async (_event, payload = {}) => {
     const result = await dialog.showOpenDialog({
       defaultPath: resolveUploadDefaultPath(settingsService, payload.menuKey),

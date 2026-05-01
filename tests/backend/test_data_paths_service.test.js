@@ -32,4 +32,32 @@ describe('dataPathsService', () => {
     await ensureDataLayout({ mkdir })
     expect(mkdir).toHaveBeenCalled()
   })
+
+  it('prefers an explicit writable data root override when provided', async () => {
+    vi.resetModules()
+    const previousValue = process.env.QIUAI_DATA_ROOT
+    process.env.QIUAI_DATA_ROOT = 'C:/Users/TestUser/AppData/Roaming/QiuAi/DATA'
+
+    try {
+      const {
+        DATA_ROOT_DIRECTORY,
+        getDataFilePaths,
+        getTaskDataDirectories
+      } = await import('../../main/src/services/dataPathsService.js')
+
+      expect(DATA_ROOT_DIRECTORY.replace(/\\/g, '/')).toBe('C:/Users/TestUser/AppData/Roaming/QiuAi/DATA')
+      expect(getDataFilePaths().outputRootDirectory.replace(/\\/g, '/')).toBe('C:/Users/TestUser/AppData/Roaming/QiuAi/DATA/output')
+      expect(getTaskDataDirectories({
+        featureKey: 'single-design',
+        taskId: 'task-2'
+      }).inputDirectory.replace(/\\/g, '/')).toBe('C:/Users/TestUser/AppData/Roaming/QiuAi/DATA/input/single-design/task-2')
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.QIUAI_DATA_ROOT
+      } else {
+        process.env.QIUAI_DATA_ROOT = previousValue
+      }
+      vi.resetModules()
+    }
+  })
 })

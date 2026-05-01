@@ -198,6 +198,27 @@ describe('desktopBridge', () => {
     })
   })
 
+  it('invokes the studio stop task channel through the desktop bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue({ ok: true })
+
+    window.qiuai = {
+      channels: {
+        STUDIO_STOP_TASK: 'studio:stop-task'
+      },
+      invoke
+    }
+
+    const { stopStudioTask } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await stopStudioTask({
+      taskId: 'task-stop-1'
+    })
+
+    expect(invoke).toHaveBeenCalledWith('studio:stop-task', {
+      taskId: 'task-stop-1'
+    })
+  })
+
   it('invokes the studio input picker channel through the desktop bridge', async () => {
     const invoke = vi.fn().mockResolvedValue({ canceled: false, files: [] })
 

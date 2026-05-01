@@ -21,7 +21,8 @@ import {
   removePromptTemplate,
   saveSettings,
   savePromptTemplate,
-  saveStudioDraft
+  saveStudioDraft,
+  stopStudioTask
 } from './services/desktopBridge'
 
 const themeOptions = [
@@ -1374,6 +1375,48 @@ async function handleSaveApiConfig() {
   }
 }
 
+async function handleStopTask(task) {
+  if (!task?.id) {
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: '结束任务失败：未找到可结束的任务'
+    })
+    return
+  }
+
+  const shouldStop = typeof window !== 'undefined' && typeof window.confirm === 'function'
+    ? window.confirm('确认结束这个任务吗？结束后任务将标记为失败，已冻结积分会返还，已生成结果会保留。')
+    : true
+
+  if (!shouldStop) {
+    return
+  }
+
+  try {
+    await stopStudioTask({
+      taskId: task.id
+    })
+    await loadStudioSnapshot({
+      preserveDrafts: true,
+      preserveApiConfig: true,
+      preserveUploadDirectoryDrafts: true
+    })
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: '任务已结束'
+    })
+  } catch (error) {
+    console.error('Failed to stop studio task', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `结束任务失败：${buildErrorMessage(error, '任务结束未完成')}`
+    })
+  }
+}
+
 function handleCreditAdjustmentValueUpdate(value) {
   creditAdjustmentAmount.value = String(value ?? '')
 }
@@ -1668,6 +1711,7 @@ onBeforeUnmount(() => {
           @batch-download="handleBatchDownload"
           @open-output-directory="handleOpenOutputDirectory"
           @delete-export-item="handleDeleteExportItem"
+          @stop-task="handleStopTask"
         />
       </aside>
     </section>

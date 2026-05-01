@@ -171,6 +171,12 @@ describe('component sources', () => {
     expect(exportSource).toContain('个图片')
     expect(exportSource).not.toContain('个结果文件')
 
+    const taskSidebarSource = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/components/TaskManagerSidebar.vue'), 'utf8')
+    expect(taskSidebarSource).toContain('结束任务')
+    expect(taskSidebarSource).toContain('stop-task')
+    expect(taskSidebarSource).toContain('isStoppableTask')
+    expect(taskSidebarSource).toContain('task-card__footer')
+
     expect(dashboardSource).not.toContain('文案生成统计')
     expect(dashboardSource).toContain('单图测试统计')
     expect(dashboardSource).toContain('单图设计统计')

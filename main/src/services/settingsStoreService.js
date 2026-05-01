@@ -93,6 +93,22 @@ function normalizeCreditHistoryEntry(entry = {}) {
   }
 }
 
+function normalizeUploadDirectoryPatch(uploadDirectories = {}) {
+  if (!uploadDirectories || typeof uploadDirectories !== 'object') {
+    return {}
+  }
+
+  const patch = {}
+
+  for (const key of ['single-image', 'single-design', 'series-design', 'series-generate']) {
+    if (Object.prototype.hasOwnProperty.call(uploadDirectories, key)) {
+      patch[key] = typeof uploadDirectories[key] === 'string' ? uploadDirectories[key] : ''
+    }
+  }
+
+  return patch
+}
+
 function normalizeCreditActivityEntry(entry = {}) {
   return {
     id: typeof entry.id === 'string' ? entry.id : '',
@@ -280,10 +296,13 @@ function createSettingsStoreService ({ store }) {
     const apiKeys = Object.prototype.hasOwnProperty.call(payload, 'apiKeys')
       ? normalizeApiKeys(payload.apiKeys)
       : normalizeApiKeys(currentSettings.apiKeys)
-    const uploadDirectories = {
-      ...normalizeUploadDirectories(currentSettings.uploadDirectories),
-      ...normalizeUploadDirectories(payload.uploadDirectories)
-    }
+    const hasUploadDirectoriesPatch = Object.prototype.hasOwnProperty.call(payload, 'uploadDirectories')
+    const uploadDirectories = hasUploadDirectoriesPatch
+      ? {
+          ...normalizeUploadDirectories(currentSettings.uploadDirectories),
+          ...normalizeUploadDirectoryPatch(payload.uploadDirectories)
+        }
+      : normalizeUploadDirectories(currentSettings.uploadDirectories)
     const globalUploadDirectory = Object.prototype.hasOwnProperty.call(payload, 'globalUploadDirectory')
       ? normalizeGlobalUploadDirectory(payload.globalUploadDirectory)
       : normalizeGlobalUploadDirectory(currentSettings.globalUploadDirectory)
@@ -292,8 +311,13 @@ function createSettingsStoreService ({ store }) {
       apiKeys[activeApiKeyIndex] = payload.apiKey
     }
 
-    validateUploadDirectories(uploadDirectories, options)
-    validateGlobalUploadDirectory(globalUploadDirectory, options)
+    if (hasUploadDirectoriesPatch) {
+      validateUploadDirectories(normalizeUploadDirectoryPatch(payload.uploadDirectories), options)
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'globalUploadDirectory')) {
+      validateGlobalUploadDirectory(globalUploadDirectory, options)
+    }
 
     let creditState = Object.prototype.hasOwnProperty.call(restPayload, 'creditState')
       ? normalizeCreditState({

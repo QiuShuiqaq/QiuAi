@@ -1298,4 +1298,133 @@ describe('studioWorkspaceService', () => {
       'task_freeze'
     ])
   })
+
+  it('manually stops waiting and running tasks, refunds credits, and releases the queue', async () => {
+    const store = createMemoryStore()
+    let releaseRunningTask
+    const runningTaskPromise = new Promise((resolve) => {
+      releaseRunningTask = resolve
+    })
+    const createdIds = ['manual-stop-running', 'manual-stop-waiting']
+    const createdTaskNumbers = ['QAI-20260501-0001', 'QAI-20260501-0002']
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 5000
+      }
+    }, {
+      getNow: () => '2026-05-01T08:00:00.000Z'
+    })
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: vi.fn(async ({ taskId }) => {
+        if (taskId === 'manual-stop-running') {
+          await runningTaskPromise
+        }
+
+        return {
+          textResults: [],
+          comparisonResults: [
+            {
+              id: `${taskId}-single-design-1`,
+              model: 'gpt-image-2',
+              title: '单图设计结果',
+              preview: createPreviewDataUrl(taskId)
+            }
+          ],
+          groupedResults: [],
+          summary: {
+            title: '单图设计',
+            description: '手动结束任务测试'
+          }
+        }
+      }),
+      createId: () => createdIds.shift(),
+      createTaskNumber: () => createdTaskNumbers.shift(),
+      getNow: () => '2026-05-01T08:10:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        taskName: 'RunningTask',
+        prompt: '生成一张高质量商品主图',
+        model: 'gpt-image-2'
+      }
+    })
+
+    const runningTask = await service.createTask({
+      menuKey: 'single-design'
+    })
+
+    await Promise.resolve()
+
+    await service.saveDraft({
+      menuKey: 'single-design',
+      patch: {
+        taskName: 'WaitingTask',
+        prompt: '生成另一张高质量商品主图',
+        model: 'gpt-image-2'
+      }
+    })
+
+    const waitingTask = await service.createTask({
+      menuKey: 'single-design'
+    })
+
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 3800,
+      frozenCredits: 1200,
+      usedCredits: 0
+    })
+
+    await service.stopTask({
+      taskId: waitingTask.id
+    })
+
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 4400,
+      frozenCredits: 600,
+      usedCredits: 0
+    })
+
+    await service.stopTask({
+      taskId: runningTask.id
+    })
+
+    await service.waitForIdle()
+
+    const snapshot = service.getSnapshot()
+    const stoppedTasks = snapshot.tasks.filter((task) => {
+      return task.id === runningTask.id || task.id === waitingTask.id
+    })
+
+    expect(stoppedTasks).toHaveLength(2)
+    expect(stoppedTasks.every((task) => task.status === '失败')).toBe(true)
+    expect(stoppedTasks.every((task) => task.error === '用户手动结束任务')).toBe(true)
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 5000,
+      frozenCredits: 0,
+      usedCredits: 0
+    })
+    expect(settingsService.getSettings().creditState.taskLedger['manual-stop-running']).toMatchObject({
+      status: 'refunded'
+    })
+    expect(settingsService.getSettings().creditState.taskLedger['manual-stop-waiting']).toMatchObject({
+      status: 'refunded'
+    })
+
+    releaseRunningTask()
+  })
 })

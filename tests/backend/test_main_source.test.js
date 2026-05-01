@@ -6,6 +6,7 @@ describe('main source', () => {
   it('flushes pending studio task records before the desktop app quits', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'main/main.js'), 'utf8')
 
+    expect(source).toContain("process.env.QIUAI_DATA_ROOT = path.join(app.getPath('userData'), 'DATA')")
     expect(source).toContain('const { studioTaskManagerService } = registerIpc()')
     expect(source).toContain('onBeforeQuit: () => studioTaskManagerService?.flushPendingWrites?.()')
   })

@@ -533,6 +533,10 @@ export function createStudioTask (payload) {
   return invoke(getChannel('STUDIO_CREATE_TASK'), payload)
 }
 
+export function stopStudioTask (payload) {
+  return invoke(getChannel('STUDIO_STOP_TASK'), payload)
+}
+
 export function getActivationStatus () {
   if (!hasBridge()) {
     return Promise.resolve(getBrowserActivationState())

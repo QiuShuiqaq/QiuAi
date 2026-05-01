@@ -191,4 +191,104 @@ describe('settingsStoreService', () => {
     expect(service.getSettings().creditState.activityHistory[0].type).toBe('manual_decrease')
     expect(service.getSettings().creditState.activityHistory[1].type).toBe('manual_increase')
   })
+
+  it('allows credit saves when existing upload directories are stale but not being updated', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    store.set('userSettings', {
+      globalUploadDirectory: 'Z:/stale-global-folder',
+      uploadDirectories: {
+        'single-image': 'Z:/missing-folder',
+        'single-design': 'D:/keep-this-folder',
+        'series-design': '',
+        'series-generate': ''
+      },
+      creditState: {
+        totalPurchasedCredits: 500,
+        remainingCredits: 300
+      }
+    })
+
+    await expect(service.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 100
+      }
+    }, {
+      isDirectory: () => false,
+      getNow: () => '2026-05-01T10:00:00.000Z'
+    })).resolves.toBeTruthy()
+
+    await expect(service.saveSettings({
+      creditState: {
+        totalPurchasedCredits: 1000
+      }
+    }, {
+      isDirectory: () => false
+    })).resolves.toBeTruthy()
+
+    expect(service.getSettings()).toMatchObject({
+      globalUploadDirectory: 'Z:/stale-global-folder',
+      uploadDirectories: {
+        'single-image': 'Z:/missing-folder',
+        'single-design': 'D:/keep-this-folder',
+        'series-design': '',
+        'series-generate': ''
+      },
+      creditState: {
+        totalPurchasedCredits: 1000,
+        remainingCredits: 400
+      }
+    })
+  })
+
+  it('updates only the provided upload directory keys without clearing sibling directories', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await service.saveSettings({
+      uploadDirectories: {
+        'single-image': 'D:/Input/SingleImage',
+        'single-design': 'D:/Input/SingleDesign'
+      }
+    }, {
+      isDirectory: (targetPath) => targetPath.startsWith('D:/Input/')
+    })
+
+    await service.saveSettings({
+      uploadDirectories: {
+        'series-design': 'D:/Input/SeriesDesign'
+      }
+    }, {
+      isDirectory: (targetPath) => targetPath.startsWith('D:/Input/')
+    })
+
+    expect(service.getSettings().uploadDirectories).toMatchObject({
+      'single-image': 'D:/Input/SingleImage',
+      'single-design': 'D:/Input/SingleDesign',
+      'series-design': 'D:/Input/SeriesDesign',
+      'series-generate': ''
+    })
+  })
 })

@@ -1,7 +1,17 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
-const DATA_ROOT_DIRECTORY = path.resolve(__dirname, '../../..', 'DATA')
+function resolveDataRootDirectory() {
+  const configuredDataRoot = process.env.QIUAI_DATA_ROOT
+
+  if (typeof configuredDataRoot === 'string' && configuredDataRoot.trim()) {
+    return path.resolve(configuredDataRoot.trim())
+  }
+
+  return path.resolve(__dirname, '../../..', 'DATA')
+}
+
+const DATA_ROOT_DIRECTORY = resolveDataRootDirectory()
 const INPUT_ROOT_DIRECTORY = path.resolve(DATA_ROOT_DIRECTORY, 'input')
 const OUTPUT_ROOT_DIRECTORY = path.resolve(DATA_ROOT_DIRECTORY, 'output')
 const MESSAGE_FILE_PATH = path.resolve(DATA_ROOT_DIRECTORY, 'message.txt')

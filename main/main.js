@@ -1,4 +1,10 @@
+const path = require('node:path')
 const { app } = require('electron')
+
+if (app.isPackaged && !process.env.QIUAI_DATA_ROOT) {
+  process.env.QIUAI_DATA_ROOT = path.join(app.getPath('userData'), 'DATA')
+}
+
 const createMainWindow = require('./src/bootstrap/createMainWindow')
 const registerAppEvents = require('./src/bootstrap/registerAppEvents')
 const registerIpc = require('./src/bootstrap/registerIpc')

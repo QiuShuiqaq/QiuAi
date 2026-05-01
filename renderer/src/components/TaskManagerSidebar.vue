@@ -25,7 +25,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item'])
+const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item', 'stop-task'])
 
 const statusClassMap = {
   等待中: 'task-status--waiting',
@@ -73,6 +73,10 @@ function getStatusClass(status) {
   return statusClassMap[status] || 'task-status--waiting'
 }
 
+function isStoppableTask(task) {
+  return task && ['等待中', '进行中'].includes(task.status)
+}
+
 function formatTaskNumber(taskNumber = '', fallbackId = '') {
   const normalizedValue = String(taskNumber || fallbackId || '')
   return normalizedValue.replace(/^QAI-\d{8}-/i, 'QAI-')
@@ -107,6 +111,16 @@ function goToNextPage() {
 
               <div class="task-progress">
                 <span class="task-progress__bar" :style="{ width: `${task.progress}%` }"></span>
+              </div>
+
+              <div v-if="isStoppableTask(task)" class="task-card__footer">
+                <button
+                  class="secondary-action secondary-action--compact"
+                  type="button"
+                  @click="emit('stop-task', task)"
+                >
+                  结束任务
+                </button>
               </div>
             </template>
 
