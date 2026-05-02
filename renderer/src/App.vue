@@ -1426,23 +1426,26 @@ function handleTotalCreditValueUpdate(value) {
 }
 
 async function handleApplyCreditAdjustment(operation) {
-  const normalizedAmount = Number.parseInt(String(creditAdjustmentAmount.value || '').trim(), 10)
+  const parsedAmount = Number.parseInt(String(creditAdjustmentAmount.value || '').trim(), 10)
 
-  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+  if (!Number.isFinite(parsedAmount) || parsedAmount === 0) {
     showActionFeedback({
       type: 'error',
       title: '失败',
-      message: '积分调整失败：请输入大于 0 的积分数值'
+      message: '积分调整失败：请输入非 0 的积分数值，正数增加，负数扣减'
     })
     return
   }
+
+  const resolvedOperation = operation || (parsedAmount < 0 ? 'decrease' : 'increase')
+  const normalizedAmount = Math.abs(parsedAmount)
 
   isApplyingCreditAdjustment.value = true
 
   try {
     await saveSettings({
       creditAdjustment: {
-        operation,
+        operation: resolvedOperation,
         amount: normalizedAmount
       }
     })
@@ -1455,7 +1458,7 @@ async function handleApplyCreditAdjustment(operation) {
     showActionFeedback({
       type: 'success',
       title: '成功',
-      message: operation === 'decrease' ? '积分已扣减' : '积分已增加'
+      message: resolvedOperation === 'decrease' ? '积分已扣减' : '积分已增加'
     })
   } catch (error) {
     console.error('Failed to adjust credits', error)

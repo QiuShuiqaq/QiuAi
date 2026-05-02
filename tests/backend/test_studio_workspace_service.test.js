@@ -336,6 +336,99 @@ describe('studioWorkspaceService', () => {
     await expect(service.clearRuntimeState()).rejects.toThrow('当前存在进行中的任务，暂不能一键清理')
   })
 
+  it('converts orphaned active tasks to failed before one-key cleanup proceeds', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveSettings({
+      creditAdjustment: {
+        operation: 'increase',
+        amount: 5000
+      }
+    }, {
+      getNow: () => '2026-05-02T08:00:00.000Z'
+    })
+
+    await settingsService.saveSettings({
+      creditState: {
+        frozenCredits: 600,
+        remainingCredits: 4400,
+        usedCredits: 0,
+        taskLedger: {
+          'orphan-running-task-1': {
+            taskId: 'orphan-running-task-1',
+            taskNumber: 'QAI-20260502-0001',
+            menuKey: 'single-design',
+            taskName: 'OrphanTask',
+            modelSummary: 'gpt-image-2',
+            estimatedCredits: 600,
+            status: 'frozen',
+            createdAt: '2026-05-02 08:10:00',
+            updatedAt: '2026-05-02 08:10:00'
+          }
+        }
+      }
+    }, {
+      mergeCreditState: true
+    })
+
+    const taskManagerService = {
+      tasks: [
+        {
+          id: 'orphan-running-task-1',
+          taskNumber: 'QAI-20260502-0001',
+          menuKey: 'single-design',
+          category: '单图设计',
+          status: '进行中',
+          progress: 52,
+          createdAt: '2026-05-02 08:10:00',
+          updatedAt: '2026-05-02 08:20:00',
+          estimatedCredits: 600,
+          outputDirectory: 'F:/tmp/QiuAi/output/single-design/OrphanTask0'
+        }
+      ],
+      listTasks() {
+        return [...this.tasks]
+      },
+      async saveTask(task) {
+        this.tasks = [task, ...this.tasks.filter((item) => item.id !== task.id)]
+        return task
+      }
+    }
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      taskManagerService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      getNow: () => '2026-05-02T08:30:00.000Z'
+    })
+
+    const cleared = await service.clearRuntimeState()
+    const snapshot = service.getSnapshot()
+
+    expect(cleared.cleared).toBe(true)
+    expect(snapshot.tasks[0]).toMatchObject({
+      id: 'orphan-running-task-1',
+      status: '失败',
+      error: '任务进程已结束，系统已自动关闭该残留任务'
+    })
+    expect(settingsService.getSettings().creditState).toMatchObject({
+      remainingCredits: 5000,
+      frozenCredits: 0,
+      usedCredits: 0
+    })
+    expect(settingsService.getSettings().creditState.taskLedger['orphan-running-task-1']).toMatchObject({
+      status: 'refunded'
+    })
+  })
+
   it('persists image drafts, creates grouped tasks, and stores export folders by module', async () => {
     const store = createMemoryStore()
     const taskManagerRecords = []

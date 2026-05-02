@@ -1032,10 +1032,22 @@ textarea {
   gap: 8px;
 }
 
-.dashboard-credit-adjust__actions {
+.dashboard-credit-adjust__action-group {
   display: grid;
-  grid-template-columns: minmax(0, 88px) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+  align-content: start;
+}
+
+.dashboard-credit-adjust__actions {
+  display: none;
+}
+
+.credit-adjustment-apply {
+  min-width: 0;
+}
+
+.credit-total-save {
+  min-width: 0;
 }
 
 .dashboard-credit-gauge {

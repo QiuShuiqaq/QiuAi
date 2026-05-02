@@ -207,9 +207,9 @@ function updateCreditAdjustmentValue(value) {
   emit('update-credit-adjustment', value)
 }
 
-function applyCreditAdjustment(operation) {
-  // 积分增减事件预留：后续可在这里接入更细粒度的业务确认。
-  emit('apply-credit-adjustment', operation)
+function applyCreditAdjustment() {
+  // 积分应用事件预留：后续可在这里接入更细粒度的业务确认。
+  emit('apply-credit-adjustment')
 }
 
 function updateTotalCreditsValue(value) {
@@ -398,56 +398,51 @@ function saveTotalCredits() {
           <footer class="dashboard-card__footer dashboard-card__footer--compact">
             <div class="dashboard-credit-adjust">
               <div class="dashboard-credit-adjust__grid">
-                <label class="form-field">
-                  <span>总积分</span>
-                  <input
-                    :value="totalCreditsValue"
-                    type="number"
-                    min="0"
-                    placeholder="输入总积分"
-                    @input="updateTotalCreditsValue($event.target.value)"
-                  />
-                </label>
+                <div class="dashboard-credit-adjust__action-group">
+                  <label class="form-field">
+                    <span>总积分</span>
+                    <input
+                      :value="totalCreditsValue"
+                      type="number"
+                      min="0"
+                      placeholder="输入总积分"
+                      @input="updateTotalCreditsValue($event.target.value)"
+                    />
+                  </label>
 
-                <label class="form-field">
-                  <span>调整积分</span>
-                  <input
-                    :value="creditAdjustmentValue"
-                    type="number"
-                    min="1"
-                    placeholder="输入要调整的积分"
-                    @input="updateCreditAdjustmentValue($event.target.value)"
-                  />
-                </label>
+                  <button
+                    class="secondary-action secondary-action--compact credit-total-save"
+                    type="button"
+                    :disabled="isSavingTotalCredits"
+                    @click="saveTotalCredits"
+                  >
+                    {{ isSavingTotalCredits ? '保存中' : '保存总积分' }}
+                  </button>
+                </div>
+
+                <div class="dashboard-credit-adjust__action-group">
+                  <label class="form-field">
+                    <span>调整积分</span>
+                    <input
+                      :value="creditAdjustmentValue"
+                      type="number"
+                      placeholder="输入正数增加，负数扣减"
+                      @input="updateCreditAdjustmentValue($event.target.value)"
+                    />
+                  </label>
+
+                  <button
+                    class="secondary-action secondary-action--compact credit-adjustment-apply"
+                    type="button"
+                    :disabled="isApplyingCreditAdjustment"
+                    @click="applyCreditAdjustment"
+                  >
+                    {{ isApplyingCreditAdjustment ? '处理中...' : '应用调整' }}
+                  </button>
+                </div>
               </div>
 
-              <div class="dashboard-credit-adjust__actions">
-                <button
-                  class="secondary-action secondary-action--compact"
-                  type="button"
-                  :disabled="isSavingTotalCredits"
-                  @click="saveTotalCredits"
-                >
-                  {{ isSavingTotalCredits ? '保存中' : '保存' }}
-                </button>
-
-                <button
-                  class="secondary-action secondary-action--compact"
-                  type="button"
-                  :disabled="isApplyingCreditAdjustment"
-                  @click="applyCreditAdjustment('increase')"
-                >
-                  {{ isApplyingCreditAdjustment ? '处理中...' : '增加积分' }}
-                </button>
-                <button
-                  class="secondary-action secondary-action--compact"
-                  type="button"
-                  :disabled="isApplyingCreditAdjustment"
-                  @click="applyCreditAdjustment('decrease')"
-                >
-                  {{ isApplyingCreditAdjustment ? '处理中...' : '扣减积分' }}
-                </button>
-              </div>
+              <div class="dashboard-credit-adjust__actions" />
             </div>
           </footer>
         </article>

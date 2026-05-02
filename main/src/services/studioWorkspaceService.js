@@ -2189,6 +2189,54 @@ function createStudioWorkspaceService({
     return nextState
   }
 
+  async function reconcileOrphanedActiveTasks(tasks = getStoredTasks()) {
+    const activeTasks = tasks.filter((task) => ['等待中', '进行中'].includes(task.status))
+
+    if (!activeTasks.length) {
+      return []
+    }
+
+    const reconciledTasks = []
+    let nextCreditState = settingsService.getSettings().creditState
+
+    for (const task of activeTasks) {
+      const isQueuedLocally = queuedTaskExecutions.some((item) => item?.taskId === task.id)
+      const hasActiveController = activeTaskControllers.has(task.id)
+
+      if (isQueuedLocally || hasActiveController) {
+        continue
+      }
+
+      const failedTask = buildStoppedTaskSummary(task, '任务进程已结束，系统已自动关闭该残留任务')
+      await persistTaskAndState({
+        task: failedTask
+      })
+
+      nextCreditState = refundCreditsForTask({
+        creditState: nextCreditState,
+        taskId: task.id,
+        updatedAt: getNow()
+      })
+
+      reconciledTasks.push(failedTask)
+    }
+
+    if (reconciledTasks.length) {
+      await settingsService.saveSettings({
+        creditState: nextCreditState
+      })
+
+      await safeRuntimeLog(runtimeLogger, {
+        level: 'warn',
+        scope: 'studio-workspace',
+        message: 'Reconciled orphaned active studio tasks before runtime cleanup',
+        taskIds: reconciledTasks.map((task) => task.id)
+      })
+    }
+
+    return reconciledTasks
+  }
+
   function getResolvedExportItemsByMenu(state = getStoredState()) {
     const now = getNowMs()
     const shouldReuseCache = !isExportItemsCacheDirty &&
@@ -2340,6 +2388,8 @@ function createStudioWorkspaceService({
   }
 
   async function clearRuntimeState() {
+    await reconcileOrphanedActiveTasks()
+
     const state = getStoredState()
     const tasks = getStoredTasks(state)
     const hasActiveTasks = tasks.some((task) => ['等待中', '进行中'].includes(task.status))
