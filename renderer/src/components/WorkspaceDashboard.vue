@@ -10,20 +10,12 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  apiConfigState: {
-    type: Object,
-    required: true
-  },
   creditAdjustmentValue: {
     type: String,
     required: true
   },
   totalCreditsValue: {
     type: String,
-    required: true
-  },
-  isSavingApiConfig: {
-    type: Boolean,
     required: true
   },
   isApplyingCreditAdjustment: {
@@ -37,9 +29,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'update-api-key',
-  'switch-api-key',
-  'save-api-config',
   'update-credit-adjustment',
   'apply-credit-adjustment',
   'update-total-credits',
@@ -183,24 +172,6 @@ const hostInfoItems = computed(() => {
     { label: '运行时', value: props.hostInfo.runtimeName }
   ]
 })
-
-function saveApiConfig() {
-  // API-Key 保存事件预留：后续可在这里扩展更完整的校验提示。
-  emit('save-api-config')
-}
-
-function updateApiKey(index, value) {
-  // API-Key 输入事件预留：后续可在这里接入更细粒度的输入校验。
-  emit('update-api-key', {
-    index,
-    value
-  })
-}
-
-function switchApiKey(index) {
-  // API-Key 切换事件预留：后续可在这里接入更细粒度的切换提醒。
-  emit('switch-api-key', index)
-}
 
 function updateCreditAdjustmentValue(value) {
   // 积分调整输入事件预留：后续可在这里扩展输入格式校验。
@@ -484,64 +455,16 @@ function saveTotalCredits() {
         <article class="dashboard-config-card">
           <header class="dashboard-card__header">
             <div>
-              <h2>全局 API-Key 配置</h2>
+              <h2>服务配置状态</h2>
             </div>
           </header>
 
           <div class="dashboard-card__content">
-            <div class="dashboard-api-config">
-              <div class="dashboard-api-config__inputs">
-                <label class="form-field">
-                  <span>API-Key 1</span>
-                  <input
-                    :value="apiConfigState.apiKeys[0]"
-                    type="password"
-                    placeholder="请输入 API-Key 1"
-                    @input="updateApiKey(0, $event.target.value)"
-                  />
-                </label>
-
-                <label class="form-field">
-                  <span>API-Key 2</span>
-                  <input
-                    :value="apiConfigState.apiKeys[1]"
-                    type="password"
-                    placeholder="请输入 API-Key 2"
-                    @input="updateApiKey(1, $event.target.value)"
-                  />
-                </label>
-              </div>
-
-              <div class="dashboard-button-row">
-                <button
-                  :class="[
-                    'secondary-action',
-                    { 'secondary-action--active': apiConfigState.activeApiKeyIndex === 0 }
-                  ]"
-                  type="button"
-                  @click="switchApiKey(0)"
-                >
-                  启用 Key 1
-                </button>
-                <button
-                  :class="[
-                    'secondary-action',
-                    { 'secondary-action--active': apiConfigState.activeApiKeyIndex === 1 }
-                  ]"
-                  type="button"
-                  @click="switchApiKey(1)"
-                >
-                  启用 Key 2
-                </button>
-              </div>
+            <div class="dashboard-service-config">
+              <strong>API 已由服务方预配置</strong>
+              <p>如需更换配置，请联系服务方。</p>
             </div>
           </div>
-
-          <footer class="dashboard-card__footer">
-            <button class="primary-action" type="button" :disabled="isSavingApiConfig" @click="saveApiConfig">
-              {{ isSavingApiConfig ? '保存中...' : '保存配置' }}
-            </button>
-          </footer>
         </article>
 
         <article class="dashboard-config-card">

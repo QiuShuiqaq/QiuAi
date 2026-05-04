@@ -31,6 +31,7 @@ const defaultBrowserSettings = {
     'series-generate': ''
   },
   themeMode: 'dark',
+  downloadCleanupEnabled: true,
   creditState: defaultBrowserCreditState
 }
 
@@ -171,6 +172,10 @@ function normalizeThemeMode () {
   return 'dark'
 }
 
+function normalizeDownloadCleanupEnabled (downloadCleanupEnabled = true) {
+  return downloadCleanupEnabled !== false
+}
+
 function normalizeUploadDirectories (uploadDirectories = {}) {
   const source = uploadDirectories && typeof uploadDirectories === 'object' ? uploadDirectories : {}
 
@@ -267,6 +272,7 @@ function normalizeBrowserSettings (rawSettings = {}) {
   return {
     ...mergedSettings,
     themeMode: normalizeThemeMode(mergedSettings.themeMode),
+    downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
     creditState: normalizeBrowserCreditState(mergedSettings.creditState),
@@ -450,6 +456,10 @@ export function saveSettings (payload) {
   }
 
   return invoke(getChannel('SETTINGS_SAVE'), payload)
+}
+
+export function saveAdminApiKey (payload) {
+  return invoke(getChannel('SETTINGS_SAVE_ADMIN_API_KEY'), payload)
 }
 
 export function createTask (payload) {

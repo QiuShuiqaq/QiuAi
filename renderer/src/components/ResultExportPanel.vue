@@ -13,10 +13,14 @@ const props = defineProps({
   selectedExportIds: {
     type: Array,
     required: true
+  },
+  downloadCleanupEnabled: {
+    type: Boolean,
+    default: true
   }
 })
 
-const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item'])
+const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item', 'toggle-download-cleanup'])
 
 const outputDirectoryIconUrl = new URL('../../../icon/wenjianjia.png', import.meta.url).href
 const downloadIconUrl = new URL('../../../icon/down.png', import.meta.url).href
@@ -56,6 +60,10 @@ function handleDeleteExportItem(itemId) {
   emit('delete-export-item', itemId)
 }
 
+function handleToggleDownloadCleanup(event) {
+  emit('toggle-download-cleanup', Boolean(event?.target?.checked))
+}
+
 function goToPreviousPage() {
   currentPage.value = Math.max(1, currentPage.value - 1)
 }
@@ -71,6 +79,16 @@ function goToNextPage() {
       <div>
         <h2>结果导出</h2>
         <p class="section-copy">{{ menuLabel }} 已生成分组文件夹</p>
+      </div>
+      <div class="section-header__actions">
+        <label class="export-cleanup-toggle">
+          <input
+            :checked="downloadCleanupEnabled"
+            type="checkbox"
+            @change="handleToggleDownloadCleanup"
+          />
+          <span>自动删除</span>
+        </label>
       </div>
     </header>
 

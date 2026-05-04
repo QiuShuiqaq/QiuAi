@@ -81,20 +81,12 @@ defineProps({
     type: Object,
     required: true
   },
-  apiConfigState: {
-    type: Object,
-    required: true
-  },
   creditAdjustmentValue: {
     type: String,
     required: true
   },
   totalCreditsValue: {
     type: String,
-    required: true
-  },
-  isSavingApiConfig: {
-    type: Boolean,
     required: true
   },
   isApplyingCreditAdjustment: {
@@ -127,9 +119,6 @@ const emit = defineEmits([
   'select-series-design-images',
   'select-series-generate-image',
   'open-output-directory',
-  'update-api-key',
-  'switch-api-key',
-  'save-api-config',
   'update-credit-adjustment',
   'apply-credit-adjustment',
   'update-total-credits',
@@ -154,15 +143,10 @@ const emit = defineEmits([
         <WorkspaceDashboard
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
-          :api-config-state="apiConfigState"
           :credit-adjustment-value="creditAdjustmentValue"
           :total-credits-value="totalCreditsValue"
-          :is-saving-api-config="isSavingApiConfig"
           :is-applying-credit-adjustment="isApplyingCreditAdjustment"
           :is-saving-total-credits="isSavingTotalCredits"
-          @update-api-key="emit('update-api-key', $event)"
-          @switch-api-key="emit('switch-api-key', $event)"
-          @save-api-config="emit('save-api-config')"
           @update-credit-adjustment="emit('update-credit-adjustment', $event)"
           @apply-credit-adjustment="emit('apply-credit-adjustment', $event)"
           @update-total-credits="emit('update-total-credits', $event)"

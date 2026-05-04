@@ -1,6 +1,7 @@
 module.exports = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_SAVE: 'settings:save',
+  SETTINGS_SAVE_ADMIN_API_KEY: 'settings:save-admin-api-key',
   DRAW_CREATE_TASK: 'draw:create-task',
   DRAW_GET_RESULT: 'draw:get-result',
   DRAW_DOWNLOAD_IMAGE: 'draw:download-image',

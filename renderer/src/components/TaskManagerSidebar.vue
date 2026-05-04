@@ -22,10 +22,14 @@ const props = defineProps({
   selectedExportIds: {
     type: Array,
     required: true
+  },
+  downloadCleanupEnabled: {
+    type: Boolean,
+    default: true
   }
 })
 
-const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item', 'stop-task'])
+const emit = defineEmits(['toggle-export-item', 'batch-download', 'open-output-directory', 'delete-export-item', 'toggle-download-cleanup', 'stop-task'])
 
 const statusClassMap = {
   等待中: 'task-status--waiting',
@@ -157,10 +161,12 @@ function goToNextPage() {
         :menu-label="menuLabel"
         :export-items="exportItems"
         :selected-export-ids="selectedExportIds"
+        :download-cleanup-enabled="downloadCleanupEnabled"
         @toggle-export-item="emit('toggle-export-item', $event)"
         @batch-download="emit('batch-download')"
         @open-output-directory="emit('open-output-directory', $event)"
         @delete-export-item="emit('delete-export-item', $event)"
+        @toggle-download-cleanup="emit('toggle-download-cleanup', $event)"
       />
     </section>
 

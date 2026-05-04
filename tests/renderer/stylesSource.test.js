@@ -30,6 +30,8 @@ describe('styles source', () => {
     expect(source).toContain('.topbar-contact-button')
     expect(source).toContain('.contact-preview-modal')
     expect(source).toContain('.contact-preview-modal__image-grid')
+    expect(source).toContain('.admin-password-modal')
+    expect(source).toContain('.admin-api-key-modal')
     expect(source).toContain('.scrollbar-hidden')
     expect(source).toContain('.scrollbar-hidden::-webkit-scrollbar')
     expect(source).toContain('.panel-content--scrollable')

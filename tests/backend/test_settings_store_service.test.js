@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 describe('settingsStoreService', () => {
-  it('saves and loads dual api keys with active slot', async () => {
+  it('loads dual api keys with active slot from persisted settings', async () => {
     const memory = new Map()
     const store = {
       get (key, fallbackValue) {
@@ -15,7 +15,7 @@ describe('settingsStoreService', () => {
     const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
     const service = createSettingsStoreService({ store })
 
-    await service.saveSettings({
+    store.set('userSettings', {
       apiBaseUrl: 'https://grsai.dakka.com.cn',
       apiKeys: ['sk-demo-1', 'sk-demo-2'],
       activeApiKeyIndex: 1,
@@ -28,8 +28,6 @@ describe('settingsStoreService', () => {
         'series-generate': 'C:/QiuAi/Input/SeriesGenerate'
       },
       themeMode: 'eye-care'
-    }, {
-      isDirectory: (targetPath) => targetPath.startsWith('C:/QiuAi/Input/')
     })
 
     expect(service.getSettings()).toMatchObject({
@@ -49,7 +47,7 @@ describe('settingsStoreService', () => {
     })
   })
 
-  it('maps legacy single api key payload into the active slot', async () => {
+  it('keeps legacy stored single api key data readable through normalized settings', async () => {
     const memory = new Map()
     const store = {
       get (key, fallbackValue) {
@@ -63,20 +61,110 @@ describe('settingsStoreService', () => {
     const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
     const service = createSettingsStoreService({ store })
 
-    await service.saveSettings({
+    store.set('userSettings', {
       apiKeys: ['sk-old-1', 'sk-old-2'],
-      activeApiKeyIndex: 0
-    })
-
-    await service.saveSettings({
+      activeApiKeyIndex: 0,
       apiKey: 'sk-legacy'
     })
 
     expect(service.getSettings()).toMatchObject({
-      apiKeys: ['sk-legacy', 'sk-old-2'],
+      apiKeys: ['sk-old-1', 'sk-old-2'],
       activeApiKeyIndex: 0,
-      apiKey: 'sk-legacy'
+      apiKey: 'sk-old-1'
     })
+  })
+
+  it('rejects normal settings saves that try to modify api key fields', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await expect(service.saveSettings({
+      apiKey: 'sk-blocked'
+    })).rejects.toThrow('当前版本不允许用户修改 API-Key')
+
+    await expect(service.saveSettings({
+      apiKeys: ['sk-blocked', '']
+    })).rejects.toThrow('当前版本不允许用户修改 API-Key')
+
+    await expect(service.saveSettings({
+      activeApiKeyIndex: 1
+    })).rejects.toThrow('当前版本不允许用户修改 API-Key')
+  })
+
+  it('rejects admin api key save when password is incorrect', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await expect(service.saveAdminApiKey({
+      apiKey: 'sk-admin',
+      password: 'wrong'
+    })).rejects.toThrow('管理员验证失败：密码错误')
+  })
+
+  it('rejects empty admin api key saves', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await expect(service.saveAdminApiKey({
+      apiKey: '   ',
+      password: 'qiuai@123'
+    })).rejects.toThrow('API-Key 不能为空')
+  })
+
+  it('saves a single admin api key into slot 0 and fixes the active index', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    const saved = await service.saveAdminApiKey({
+      apiKey: 'sk-admin-real',
+      password: 'qiuai@123'
+    })
+
+    expect(saved.apiKeys[0]).toBe('sk-admin-real')
+    expect(saved.apiKeys[1]).toBe('')
+    expect(saved.activeApiKeyIndex).toBe(0)
+    expect(saved.apiKey).toBe('sk-admin-real')
+    expect(service.getSettings().apiKey).toBe('sk-admin-real')
   })
 
   it('rejects invalid upload directories and accepts empty values as cleared defaults', async () => {
@@ -290,5 +378,34 @@ describe('settingsStoreService', () => {
       'series-design': 'D:/Input/SeriesDesign',
       'series-generate': ''
     })
+  })
+
+  it('defaults download cleanup to enabled and preserves explicit boolean values', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    expect(service.getSettings().downloadCleanupEnabled).toBe(true)
+
+    await service.saveSettings({
+      downloadCleanupEnabled: false
+    })
+
+    expect(service.getSettings().downloadCleanupEnabled).toBe(false)
+
+    await service.saveSettings({
+      downloadCleanupEnabled: true
+    })
+
+    expect(service.getSettings().downloadCleanupEnabled).toBe(true)
   })
 })

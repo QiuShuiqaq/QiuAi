@@ -14,14 +14,26 @@ async function listSupportedImageFilesFromDirectory (directoryPath, { readdir = 
     .map((entry) => path.resolve(directoryPath, entry.name)))
 }
 
-async function describeSupportedImageFiles (filePaths = [], { stat = fs.stat } = {}) {
+async function describeSupportedImageFiles (filePaths = [], {
+  stat = fs.stat,
+  readFile = fs.readFile
+} = {}) {
   const supportedPaths = listSupportedImageFiles(filePaths)
   const files = await Promise.all(supportedPaths.map(async (filePath) => {
     const fileStat = await stat(filePath)
+    const mimeType = getMimeTypeFromPath(filePath)
+    const preview = await toDataUrl({
+      filePath,
+      mimeType
+    }, {
+      readFile
+    })
+
     return {
       name: path.basename(filePath),
       path: filePath,
-      size: Number(fileStat.size) || 0
+      size: Number(fileStat.size) || 0,
+      preview
     }
   }))
 

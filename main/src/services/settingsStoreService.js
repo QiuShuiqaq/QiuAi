@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const SETTINGS_KEY = 'userSettings'
 const API_KEY_SLOT_COUNT = 2
 const CREDIT_HISTORY_LIMIT = 20
+const ADMIN_API_KEY_PASSWORD = 'qiuai@123'
 
 const defaultCreditState = {
   totalPurchasedCredits: 0,
@@ -32,6 +33,7 @@ const defaultSettings = {
     'series-generate': ''
   },
   themeMode: 'dark',
+  downloadCleanupEnabled: true,
   creditState: defaultCreditState
 }
 
@@ -71,6 +73,10 @@ function normalizeUploadDirectories(uploadDirectories = {}) {
 
 function normalizeGlobalUploadDirectory(globalUploadDirectory = '') {
   return typeof globalUploadDirectory === 'string' ? globalUploadDirectory : ''
+}
+
+function normalizeDownloadCleanupEnabled(downloadCleanupEnabled = true) {
+  return downloadCleanupEnabled !== false
 }
 
 function normalizeNonNegativeInteger(value = 0) {
@@ -270,6 +276,7 @@ function normalizeSettings(rawSettings = {}) {
   return {
     ...mergedSettings,
     themeMode: normalizeThemeMode(mergedSettings.themeMode),
+    downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
     creditState: normalizeCreditState(mergedSettings.creditState),
@@ -285,17 +292,19 @@ function createSettingsStoreService ({ store }) {
   }
 
   async function saveSettings (payload = {}, options = {}) {
+    const hasSensitiveApiKeyFields = ['apiKeys', 'apiKey', 'activeApiKeyIndex'].some((field) => {
+      return Object.prototype.hasOwnProperty.call(payload || {}, field)
+    })
+
+    if (hasSensitiveApiKeyFields) {
+      throw new Error('当前版本不允许用户修改 API-Key')
+    }
+
     const currentSettings = getSettings()
     const {
       creditAdjustment,
       ...restPayload
     } = payload || {}
-    const activeApiKeyIndex = Object.prototype.hasOwnProperty.call(payload, 'activeApiKeyIndex')
-      ? normalizeActiveApiKeyIndex(payload.activeApiKeyIndex)
-      : currentSettings.activeApiKeyIndex
-    const apiKeys = Object.prototype.hasOwnProperty.call(payload, 'apiKeys')
-      ? normalizeApiKeys(payload.apiKeys)
-      : normalizeApiKeys(currentSettings.apiKeys)
     const hasUploadDirectoriesPatch = Object.prototype.hasOwnProperty.call(payload, 'uploadDirectories')
     const uploadDirectories = hasUploadDirectoriesPatch
       ? {
@@ -306,10 +315,6 @@ function createSettingsStoreService ({ store }) {
     const globalUploadDirectory = Object.prototype.hasOwnProperty.call(payload, 'globalUploadDirectory')
       ? normalizeGlobalUploadDirectory(payload.globalUploadDirectory)
       : normalizeGlobalUploadDirectory(currentSettings.globalUploadDirectory)
-
-    if (typeof payload.apiKey === 'string') {
-      apiKeys[activeApiKeyIndex] = payload.apiKey
-    }
 
     if (hasUploadDirectoriesPatch) {
       validateUploadDirectories(normalizeUploadDirectoryPatch(payload.uploadDirectories), options)
@@ -335,9 +340,30 @@ function createSettingsStoreService ({ store }) {
       ...restPayload,
       globalUploadDirectory,
       uploadDirectories,
-      apiKeys,
-      activeApiKeyIndex,
       creditState
+    })
+
+    store.set(SETTINGS_KEY, nextSettings)
+    return nextSettings
+  }
+
+  async function saveAdminApiKey ({ apiKey = '', password = '' } = {}) {
+    if (password !== ADMIN_API_KEY_PASSWORD) {
+      throw new Error('管理员验证失败：密码错误')
+    }
+
+    const normalizedApiKey = typeof apiKey === 'string' ? apiKey.trim() : ''
+    if (!normalizedApiKey) {
+      throw new Error('API-Key 不能为空')
+    }
+
+    const currentSettings = getSettings()
+    const nextApiKeys = normalizeApiKeys([normalizedApiKey, ''])
+    const nextSettings = normalizeSettings({
+      ...currentSettings,
+      apiKeys: nextApiKeys,
+      activeApiKeyIndex: 0,
+      apiKey: normalizedApiKey
     })
 
     store.set(SETTINGS_KEY, nextSettings)
@@ -346,7 +372,8 @@ function createSettingsStoreService ({ store }) {
 
   return {
     getSettings,
-    saveSettings
+    saveSettings,
+    saveAdminApiKey
   }
 }
 

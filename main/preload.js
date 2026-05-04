@@ -4,6 +4,7 @@ const ipcChannels = require('../shared/ipcChannels')
 const channels = {
   SETTINGS_GET: ipcChannels.SETTINGS_GET,
   SETTINGS_SAVE: ipcChannels.SETTINGS_SAVE,
+  SETTINGS_SAVE_ADMIN_API_KEY: ipcChannels.SETTINGS_SAVE_ADMIN_API_KEY,
   DRAW_CREATE_TASK: ipcChannels.DRAW_CREATE_TASK,
   DRAW_GET_RESULT: ipcChannels.DRAW_GET_RESULT,
   DRAW_DOWNLOAD_IMAGE: ipcChannels.DRAW_DOWNLOAD_IMAGE,

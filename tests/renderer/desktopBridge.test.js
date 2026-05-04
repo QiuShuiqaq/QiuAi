@@ -29,6 +29,29 @@ describe('desktopBridge', () => {
     })
   })
 
+  it('invokes the admin api key save channel through the desktop bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue({ apiKey: 'sk-admin-real' })
+
+    window.qiuai = {
+      channels: {
+        SETTINGS_SAVE_ADMIN_API_KEY: 'settings:save-admin-api-key'
+      },
+      invoke
+    }
+
+    const { saveAdminApiKey } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await saveAdminApiKey({
+      apiKey: 'sk-admin-real',
+      password: 'qiuai@123'
+    })
+
+    expect(invoke).toHaveBeenCalledWith('settings:save-admin-api-key', {
+      apiKey: 'sk-admin-real',
+      password: 'qiuai@123'
+    })
+  })
+
   it('falls back to browser storage for settings when the electron bridge is unavailable', async () => {
     const storage = new Map()
     window.localStorage = {

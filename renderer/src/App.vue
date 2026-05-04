@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppTopBar from './components/AppTopBar.vue'
+import AdminPasswordDialog from './components/AdminPasswordDialog.vue'
+import AdminApiKeyDialog from './components/AdminApiKeyDialog.vue'
 import ActivationGate from './components/ActivationGate.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import DesignWorkspace from './components/DesignWorkspace.vue'
@@ -19,6 +21,7 @@ import {
   pickStudioInputAssets,
   reloadActivation,
   removePromptTemplate,
+  saveAdminApiKey,
   saveSettings,
   savePromptTemplate,
   saveStudioDraft,
@@ -98,8 +101,8 @@ const ratioOptions = [
 
 const activeTheme = ref('dark')
 const activeMenu = ref('workspace')
-const isSavingApiConfig = ref(false)
 const isApplyingCreditAdjustment = ref(false)
+const downloadCleanupEnabled = ref(true)
 const selectedExportIds = ref([])
 const submitButtonState = ref('idle')
 const tasks = ref([])
@@ -115,16 +118,20 @@ const actionNotice = reactive({
   title: '',
   message: ''
 })
-const apiConfigDraft = reactive({
-  apiKeys: ['', ''],
-  activeApiKeyIndex: 0
-})
 const creditAdjustmentAmount = ref('')
 const totalCreditAmount = ref('')
 const uploadDirectoryDrafts = reactive(createEmptyUploadDirectoryDrafts())
 const activationState = ref(createDefaultActivationState())
 const isActivationLoading = ref(true)
 const isSavingTotalCredits = ref(false)
+const adminLogoClickCount = ref(0)
+const isAdminPasswordDialogVisible = ref(false)
+const isAdminPasswordSubmitting = ref(false)
+const adminPasswordDraft = ref('')
+const isAdminApiConfigUnlocked = ref(false)
+const isAdminApiKeyDialogVisible = ref(false)
+const adminApiKeyDraft = ref('')
+const isAdminApiKeySaving = ref(false)
 let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
@@ -151,22 +158,15 @@ function normalizeUploadDirectoryDrafts(uploadDirectories = {}) {
   }
 }
 
-function createPreviewUrl(filePath = '') {
-  if (!filePath) {
-    return ''
-  }
-
-  return encodeURI(`file:///${String(filePath).replace(/\\/g, '/')}`)
-}
-
 function createImageAsset(file, idPrefix, preview = true) {
+  const previewValue = typeof file.preview === 'string' ? file.preview : ''
   return {
     id: `${idPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: file.name,
     path: file.path || '',
     sizeLabel: `${Math.max(1, Math.round((Number(file.size) || 0) / 1024))} KB`,
     preview: preview
-      ? (file instanceof File ? URL.createObjectURL(file) : createPreviewUrl(file.path || ''))
+      ? (previewValue || (file instanceof File ? URL.createObjectURL(file) : ''))
       : '',
     storedPath: ''
   }
@@ -581,17 +581,10 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
     ...(snapshot.hostInfo || {})
   }
   activeTheme.value = settings.themeMode || snapshot.themeMode || 'dark'
+  downloadCleanupEnabled.value = settings.downloadCleanupEnabled !== false
 
   if (!preserveApiConfig) {
-    const nextApiKeys = Array.isArray(settings.apiKeys) && settings.apiKeys.length
-      ? settings.apiKeys
-      : snapshot.settingsSummary?.apiKeys || ['', '']
-    apiConfigDraft.apiKeys = Array.from({ length: 2 }, (_unused, index) => {
-      return typeof nextApiKeys[index] === 'string' ? nextApiKeys[index] : ''
-    })
-    apiConfigDraft.activeApiKeyIndex = Number.isInteger(settings.activeApiKeyIndex)
-      ? settings.activeApiKeyIndex
-      : (snapshot.settingsSummary?.activeApiKeyIndex || 0)
+    adminApiKeyDraft.value = settings.apiKey || ''
   }
 
   if (!preserveUploadDirectoryDrafts) {
@@ -675,6 +668,13 @@ async function refreshStudioRuntimeState() {
 function handleBrandClick() {
   // Logo 点击事件预留：后续可在这里接入返回首页或重置工作区逻辑。
   activeMenu.value = 'workspace'
+  adminLogoClickCount.value += 1
+
+  if (adminLogoClickCount.value >= 5) {
+    adminLogoClickCount.value = 0
+    adminPasswordDraft.value = ''
+    isAdminPasswordDialogVisible.value = true
+  }
 }
 
 async function handleCopyDeviceCode() {
@@ -1192,9 +1192,10 @@ async function handleBatchDownload() {
   }
 
   try {
+    const exportedIds = [...selectedExportIds.value]
     const exportedArchive = await exportStudioResults({
       menuKey: activeMenu.value,
-      selectedExportIds: selectedExportIds.value
+      selectedExportIds: exportedIds
     })
 
     if (exportedArchive?.canceled) {
@@ -1206,10 +1207,32 @@ async function handleBatchDownload() {
       return
     }
 
+    if (downloadCleanupEnabled.value) {
+      const cleanupResults = await Promise.allSettled(exportedIds.map((exportItemId) => deleteStudioExportItem({
+        menuKey: activeMenu.value,
+        exportItemId
+      })))
+      const hasCleanupFailure = cleanupResults.some((result) => result.status === 'rejected')
+      selectedExportIds.value = []
+      await loadStudioSnapshot({
+        preserveDrafts: true,
+        preserveApiConfig: true,
+        preserveUploadDirectoryDrafts: true
+      })
+      showActionFeedback({
+        type: hasCleanupFailure ? 'error' : 'success',
+        title: hasCleanupFailure ? '失败' : '成功',
+        message: hasCleanupFailure
+          ? '批量下载成功，但部分结果文件夹自动清理失败'
+          : '批量下载成功，已自动清理已导出的结果文件夹'
+      })
+      return
+    }
+
     showActionFeedback({
       type: 'success',
       title: '成功',
-      message: `已导出 ${exportedArchive?.exportedCount || selectedExportIds.value.length} 个结果到压缩包`
+      message: `已导出 ${exportedArchive?.exportedCount || exportedIds.length} 个结果到压缩包`
     })
   } catch (error) {
     console.error('Failed to batch download studio results', error)
@@ -1292,22 +1315,6 @@ async function handleDeleteExportItem(exportItemId) {
   }
 }
 
-function handleApiKeyUpdate({ index, value }) {
-  if (![0, 1].includes(index)) {
-    return
-  }
-
-  apiConfigDraft.apiKeys[index] = value
-}
-
-function handleSwitchApiKey(index) {
-  if (![0, 1].includes(index)) {
-    return
-  }
-
-  apiConfigDraft.activeApiKeyIndex = index
-}
-
 function handleUploadDirectoryDraftUpdate({ menuKey, value }) {
   if (!Object.prototype.hasOwnProperty.call(uploadDirectoryDrafts, menuKey)) {
     return
@@ -1345,33 +1352,81 @@ async function handleSaveUploadDirectory(menuKey) {
   }
 }
 
-async function handleSaveApiConfig() {
-  isSavingApiConfig.value = true
+function handleCloseAdminPasswordDialog() {
+  isAdminPasswordDialogVisible.value = false
+  isAdminPasswordSubmitting.value = false
+  adminPasswordDraft.value = ''
+}
 
-  try {
-    const savedSettings = await saveSettings({
-      apiKeys: apiConfigDraft.apiKeys.map((item) => item.trim()),
-      activeApiKeyIndex: apiConfigDraft.activeApiKeyIndex
-    })
+function handleConfirmAdminPassword() {
+  isAdminPasswordSubmitting.value = true
 
-    apiConfigDraft.apiKeys = Array.from({ length: 2 }, (_unused, index) => {
-      return typeof savedSettings.apiKeys[index] === 'string' ? savedSettings.apiKeys[index] : ''
-    })
-    apiConfigDraft.activeApiKeyIndex = savedSettings.activeApiKeyIndex
-    showActionFeedback({
-      type: 'success',
-      title: '成功',
-      message: '配置已保存'
-    })
-  } catch (error) {
-    console.error('Failed to save API config', error)
+  if (adminPasswordDraft.value !== 'qiuai@123') {
+    isAdminPasswordSubmitting.value = false
     showActionFeedback({
       type: 'error',
       title: '失败',
-      message: `保存配置失败：${buildErrorMessage(error, '配置保存未完成')}`
+      message: '管理员验证失败：密码错误'
+    })
+    return
+  }
+
+  isAdminPasswordSubmitting.value = false
+  isAdminPasswordDialogVisible.value = false
+  isAdminApiConfigUnlocked.value = true
+  isAdminApiKeyDialogVisible.value = true
+}
+
+function handleCloseAdminApiKeyDialog() {
+  isAdminApiKeyDialogVisible.value = false
+}
+
+async function handleSaveAdminApiKey() {
+  isAdminApiKeySaving.value = true
+
+  try {
+    const savedSettings = await saveAdminApiKey({
+      apiKey: adminApiKeyDraft.value,
+      password: adminPasswordDraft.value
+    })
+
+    adminApiKeyDraft.value = savedSettings.apiKey || ''
+    isAdminApiConfigUnlocked.value = true
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: 'API-Key 已更新'
+    })
+  } catch (error) {
+    console.error('Failed to save admin api key', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `管理员保存 API-Key 失败：${buildErrorMessage(error, '保存未完成')}`
     })
   } finally {
-    isSavingApiConfig.value = false
+    isAdminApiKeySaving.value = false
+  }
+}
+
+async function handleToggleDownloadCleanup(value) {
+  try {
+    const savedSettings = await saveSettings({
+      downloadCleanupEnabled: value
+    })
+    downloadCleanupEnabled.value = savedSettings.downloadCleanupEnabled !== false
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: downloadCleanupEnabled.value ? '已开启下载后自动清理' : '已关闭下载后自动清理'
+    })
+  } catch (error) {
+    console.error('Failed to save download cleanup preference', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `保存下载清理设置失败：${buildErrorMessage(error, '设置保存未完成')}`
+    })
   }
 }
 
@@ -1672,10 +1727,8 @@ onBeforeUnmount(() => {
           :latest-task="latestTaskForActiveMenu"
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
-          :api-config-state="apiConfigDraft"
           :credit-adjustment-value="creditAdjustmentAmount"
           :total-credits-value="totalCreditAmount"
-          :is-saving-api-config="isSavingApiConfig"
           :is-applying-credit-adjustment="isApplyingCreditAdjustment"
           :is-saving-total-credits="isSavingTotalCredits"
           :fixed-prompt-templates="fixedPromptTemplates"
@@ -1689,9 +1742,6 @@ onBeforeUnmount(() => {
           @select-series-design-images="handleOpenSeriesDesignPicker"
           @select-series-generate-image="handleOpenSeriesGeneratePicker"
           @open-output-directory="handleOpenOutputDirectory"
-          @update-api-key="handleApiKeyUpdate"
-          @switch-api-key="handleSwitchApiKey"
-          @save-api-config="handleSaveApiConfig"
           @update-credit-adjustment="handleCreditAdjustmentValueUpdate"
           @apply-credit-adjustment="handleApplyCreditAdjustment"
           @update-total-credits="handleTotalCreditValueUpdate"
@@ -1703,6 +1753,24 @@ onBeforeUnmount(() => {
         />
       </section>
 
+      <AdminPasswordDialog
+        :visible="isAdminPasswordDialogVisible"
+        :password="adminPasswordDraft"
+        :is-submitting="isAdminPasswordSubmitting"
+        @update-password="adminPasswordDraft = $event"
+        @confirm="handleConfirmAdminPassword"
+        @close="handleCloseAdminPasswordDialog"
+      />
+
+      <AdminApiKeyDialog
+        :visible="isAdminApiConfigUnlocked && isAdminApiKeyDialogVisible"
+        :api-key="adminApiKeyDraft"
+        :is-saving="isAdminApiKeySaving"
+        @update-api-key="adminApiKeyDraft = $event"
+        @save="handleSaveAdminApiKey"
+        @close="handleCloseAdminApiKeyDialog"
+      />
+
       <aside class="shell-grid__tasks">
         <TaskManagerSidebar
           :tasks="sortedTasks"
@@ -1710,10 +1778,12 @@ onBeforeUnmount(() => {
           :menu-label="currentMenuLabel"
           :export-items="exportItems"
           :selected-export-ids="selectedExportIds"
+          :download-cleanup-enabled="downloadCleanupEnabled"
           @toggle-export-item="handleToggleExportItem"
           @batch-download="handleBatchDownload"
           @open-output-directory="handleOpenOutputDirectory"
           @delete-export-item="handleDeleteExportItem"
+          @toggle-download-cleanup="handleToggleDownloadCleanup"
           @stop-task="handleStopTask"
         />
       </aside>

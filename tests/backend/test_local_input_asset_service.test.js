@@ -48,19 +48,22 @@ describe('localInputAssetService', () => {
       'C:/images/ignore.txt',
       'C:/images/c.jpeg'
     ], {
-      stat: async () => ({ size: 2048 })
+      stat: async () => ({ size: 2048 }),
+      readFile: async (filePath) => Buffer.from(`preview:${filePath}`)
     })
 
     expect(describedFiles).toEqual([
       {
         name: 'a.png',
         path: 'C:/images/a.png',
-        size: 2048
+        size: 2048,
+        preview: `data:image/png;base64,${Buffer.from('preview:C:/images/a.png').toString('base64')}`
       },
       {
         name: 'c.jpeg',
         path: 'C:/images/c.jpeg',
-        size: 2048
+        size: 2048,
+        preview: `data:image/jpeg;base64,${Buffer.from('preview:C:/images/c.jpeg').toString('base64')}`
       }
     ])
   })
