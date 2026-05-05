@@ -11,6 +11,10 @@ defineProps({
   isSaving: {
     type: Boolean,
     default: false
+  },
+  feedbackMessage: {
+    type: String,
+    default: ''
   }
 })
 
@@ -34,6 +38,10 @@ const emit = defineEmits(['update-api-key', 'save', 'close'])
           @input="emit('update-api-key', $event.target.value)"
         />
       </label>
+
+      <p v-if="feedbackMessage" class="admin-api-key-modal__feedback">
+        {{ feedbackMessage }}
+      </p>
 
       <footer class="admin-api-key-modal__actions">
         <button class="secondary-action" type="button" @click="emit('close')">

@@ -181,7 +181,7 @@ function closePreview() {
             <div class="comparison-card__header">
               <strong>{{ image.model }}</strong>
             </div>
-            <button class="image-preview-button" type="button" @click="openPreview(image)">
+            <button class="image-preview-button comparison-card__preview" type="button" @click="openPreview(image)">
               <img :src="image.preview" :alt="image.title" />
             </button>
           </article>
@@ -195,7 +195,7 @@ function closePreview() {
             <div class="comparison-card__header">
               <strong>{{ image.model }}</strong>
             </div>
-            <button class="image-preview-button" type="button" @click="openPreview(image)">
+            <button class="image-preview-button comparison-card__preview" type="button" @click="openPreview(image)">
               <img :src="image.preview" :alt="image.title" />
             </button>
           </article>
@@ -211,7 +211,7 @@ function closePreview() {
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
-              <button class="image-preview-button" type="button" @click="openPreview(output)">
+              <button class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
                 <img :src="output.preview" :alt="output.title" />
               </button>
               <strong>{{ output.model }}</strong>
@@ -229,7 +229,7 @@ function closePreview() {
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
-              <button class="image-preview-button" type="button" @click="openPreview(output)">
+              <button class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
                 <img :src="output.preview" :alt="output.title" />
               </button>
               <strong>{{ output.model }}</strong>

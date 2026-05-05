@@ -93,7 +93,7 @@ textarea {
   position: fixed;
   top: 88px;
   left: 50%;
-  z-index: 20;
+  z-index: 60;
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -540,6 +540,14 @@ textarea {
 .admin-password-modal__input,
 .admin-api-key-modal__input {
   width: 100%;
+}
+
+.admin-password-modal__feedback,
+.admin-api-key-modal__feedback {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .admin-password-modal__actions,
@@ -2199,12 +2207,26 @@ textarea {
   background: var(--panel-soft);
 }
 
-.comparison-card img {
+.comparison-card__preview,
+.image-result-card__preview {
+  display: grid;
+  place-items: center;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  height: clamp(220px, 24vw, 320px);
+  padding: 8px;
   border-radius: 12px;
   background: var(--panel-strong);
+  overflow: hidden;
+}
+
+.comparison-card__preview img,
+.image-result-card__preview img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
 }
 
 .comparison-card--adaptive img {
@@ -2330,14 +2352,6 @@ textarea {
   gap: 10px;
   padding: clamp(8px, 0.9vw, 12px);
   align-content: start;
-}
-
-.image-result-card img {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  border-radius: 12px;
-  background: var(--panel-strong);
 }
 
 .preview-modal {

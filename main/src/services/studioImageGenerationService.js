@@ -7,7 +7,6 @@ const FIXED_SINGLE_IMAGE_MODELS = ['nano-banana-fast', 'gpt-image-2']
 const DEFAULT_OPTIONAL_SINGLE_IMAGE_MODELS = ['nano-banana-2', 'nano-banana-2-cl']
 const MAX_SERIES_DESIGN_IMAGES = 30
 const SERIES_DESIGN_SOFT_WEIGHT = 12
-const SERIES_DESIGN_HARD_WEIGHT = 20
 const SERIES_GENERATE_SOFT_TOTAL = 8
 const SERIES_GROUP_CONCURRENCY = 5
 const MAX_SERIES_GENERATE_GROUP_SIZE = 100
@@ -157,6 +156,12 @@ function buildImageErrorMessage(result = {}, fallbackMessage = '图片任务执�
   return fallbackMessage
 }
 
+function isModerationFailureMessage(message = '') {
+  const normalizedMessage = String(message || '').trim()
+  return normalizedMessage === '图片任务失败：输入内容触发审核限制' ||
+    normalizedMessage === '图片任务失败：输出内容触发审核限制'
+}
+
 function createResultCardFromSavedImage(savedImage = {}, { id, model, title, promptSummary, sourceImageName }) {
   return {
     id,
@@ -178,6 +183,22 @@ function createSeriesOutputFromSavedImage(savedImage = {}, { id, title, model, s
     preview: savedImage.previewUrl || '',
     savedPath: savedImage.savedPath || '',
     sourceTag
+  }
+}
+
+function createSeriesFallbackOutput(originalOutput = {}, {
+  id,
+  title,
+  error
+} = {}) {
+  return {
+    ...originalOutput,
+    id,
+    title,
+    model: '原图保留',
+    sourceTag: 'fallback',
+    status: '失败',
+    error: String(error || '').trim() || '图片任务执行失败'
   }
 }
 
@@ -395,11 +416,6 @@ function validateStudioImageTask({ menuKey, draft }) {
 
     if (selectedAssignments.some((item) => !SERIES_GENERATE_IMAGE_TYPE_OPTIONS.includes(item.imageType))) {
       throw new Error('套图设计需要为每一张选中图片选择图片类型')
-    }
-
-    const taskWeight = selectedAssignments.length * Math.max(1, Number(draft.batchCount) || 1)
-    if (taskWeight > SERIES_DESIGN_HARD_WEIGHT) {
-      throw new Error(`套图设计当前任务过重，请将“选中图片数 x 批次”控制在 ${SERIES_DESIGN_HARD_WEIGHT} 以内`)
     }
 
     return
@@ -661,37 +677,57 @@ function createStudioImageGenerationService({
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
       const generatedReplacementMap = new Map()
+      let completedCount = 0
+      let failedCount = 0
 
       const generatedItems = await runTasksWithConcurrency(
         selectedAssignments.map((assignment, selectedIndex) => {
           return async () => {
             const sourceFilePath = assignment.storedPath || assignment.path || ''
             const subtaskIndex = (batchIndex * selectedAssignments.length) + selectedIndex
-            const completedResult = await executeRemoteImageTask({
-              jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-              model: draft.model,
-              prompt: composePrompt([draft.globalPrompt, assignment.composedPrompt]),
-              aspectRatio: resolveAspectRatio(draft.size || '1:1'),
-              imageSize: resolveImageSize(draft.model),
-              filePaths: [sourceFilePath],
-              outputDirectory,
-              onProgress: async ({ progress, status }) => {
-                await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
-              }
-            })
-            const savedImage = completedResult.results?.[0]
-            if (!savedImage) {
-              throw new Error(`${assignment.name} 未返回可用图片`)
-            }
-
-            return {
-              assignmentId: assignment.id,
-              output: createSeriesOutputFromSavedImage(savedImage, {
-                id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-                title: assignment.outputTitle,
+            try {
+              const completedResult = await executeRemoteImageTask({
+                jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
                 model: draft.model,
-                sourceTag: 'generated'
+                prompt: composePrompt([draft.globalPrompt, assignment.composedPrompt]),
+                aspectRatio: resolveAspectRatio(draft.size || '1:1'),
+                imageSize: resolveImageSize(draft.model),
+                filePaths: [sourceFilePath],
+                outputDirectory,
+                onProgress: async ({ progress, status }) => {
+                  await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+                }
               })
+              const savedImage = completedResult.results?.[0]
+              if (!savedImage) {
+                throw new Error(`${assignment.name} 未返回可用图片`)
+              }
+
+              completedCount += 1
+              return {
+                assignmentId: assignment.id,
+                output: createSeriesOutputFromSavedImage(savedImage, {
+                  id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
+                  title: assignment.outputTitle,
+                  model: draft.model,
+                  sourceTag: 'generated'
+                })
+              }
+            } catch (error) {
+              if (!isModerationFailureMessage(error?.message)) {
+                throw error
+              }
+
+              failedCount += 1
+              await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
+              return {
+                assignmentId: assignment.id,
+                output: createSeriesFallbackOutput(originalOutputs[assignments.findIndex((item) => item.id === assignment.id)] || {}, {
+                  id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}-fallback`,
+                  title: assignment.outputTitle,
+                  error: error.message
+                })
+              }
             }
           }
         }),
@@ -708,6 +744,9 @@ function createStudioImageGenerationService({
         groupTitle: `第 ${batchIndex + 1} 组`,
         promptSummary: draft.globalPrompt || '',
         notes: `已替换 ${selectedAssignments.length} 张图片`,
+        status: failedCount > 0 ? (completedCount > 0 ? 'partial' : 'failed') : 'succeeded',
+        completedCount,
+        failedCount,
         outputs: assignments.map((assignment, index) => {
           return generatedReplacementMap.get(assignment.id) || {
             ...originalOutputs[index],
@@ -868,7 +907,6 @@ module.exports = {
   DEFAULT_OPTIONAL_SINGLE_IMAGE_MODELS,
   MAX_SERIES_DESIGN_IMAGES,
   SERIES_DESIGN_SOFT_WEIGHT,
-  SERIES_DESIGN_HARD_WEIGHT,
   SERIES_GENERATE_SOFT_TOTAL,
   SERIES_GROUP_CONCURRENCY,
   MAX_SERIES_GENERATE_GROUP_SIZE,

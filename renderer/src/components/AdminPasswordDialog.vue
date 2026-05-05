@@ -11,6 +11,10 @@ defineProps({
   isSubmitting: {
     type: Boolean,
     default: false
+  },
+  feedbackMessage: {
+    type: String,
+    default: ''
   }
 })
 
@@ -32,6 +36,10 @@ const emit = defineEmits(['update-password', 'confirm', 'close'])
         placeholder="请输入管理员密码"
         @input="emit('update-password', $event.target.value)"
       />
+
+      <p v-if="feedbackMessage" class="admin-password-modal__feedback">
+        {{ feedbackMessage }}
+      </p>
 
       <footer class="admin-password-modal__actions">
         <button class="secondary-action" type="button" @click="emit('close')">

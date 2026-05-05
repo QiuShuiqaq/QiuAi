@@ -248,6 +248,144 @@ describe('studioImageGenerationService', () => {
     expect(result.summary.title).toBe('套图设计 2 组')
   })
 
+  it('keeps series-design batches running when one selected image hits output moderation and falls back to the original image', async () => {
+    const createDrawTaskDependency = vi.fn(async () => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`
+    }))
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      if (id === 'remote-2') {
+        return {
+          id,
+          status: 'failed',
+          progress: 100,
+          failure_reason: 'output_moderation',
+          error: '输出内容触发审核限制'
+        }
+      }
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    const service = createService({
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-partial',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 2,
+        size: '1:1',
+        imageAssignments: [
+          {
+            id: 'image-1',
+            name: 'look-1.png',
+            path: 'C:/input/look-1.png',
+            selected: true,
+            prompt: '突出产品主视觉效果',
+            imageType: '商品主图'
+          },
+          {
+            id: 'image-2',
+            name: 'look-2.png',
+            path: 'C:/input/look-2.png',
+            selected: false,
+            prompt: '',
+            imageType: ''
+          },
+          {
+            id: 'image-3',
+            name: 'look-3.png',
+            path: 'C:/input/look-3.png',
+            selected: true,
+            prompt: '重点展示局部材质与纹理',
+            imageType: '细节图'
+          }
+        ]
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(result.groupedResults).toHaveLength(2)
+    expect(result.groupedResults[0]).toMatchObject({
+      status: 'partial',
+      completedCount: 1,
+      failedCount: 1
+    })
+    expect(result.groupedResults[0].outputs[0]).toMatchObject({
+      title: '主图0',
+      sourceTag: 'generated',
+      model: 'gpt-image-2'
+    })
+    expect(result.groupedResults[0].outputs[1]).toMatchObject({
+      title: 'look-2.png',
+      sourceTag: 'original',
+      model: 'original'
+    })
+    expect(result.groupedResults[0].outputs[2]).toMatchObject({
+      title: '细节图0',
+      sourceTag: 'fallback',
+      model: '原图保留',
+      status: '失败',
+      error: '图片任务失败：输出内容触发审核限制'
+    })
+    expect(result.groupedResults[1]).toMatchObject({
+      status: 'succeeded',
+      completedCount: 2,
+      failedCount: 0
+    })
+  })
+
+  it('supports large series-design task weights by relying on queue execution instead of a hard rejection threshold', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    const imageAssignments = Array.from({ length: 8 }, (_unused, index) => ({
+      id: `image-${index + 1}`,
+      name: `look-${index + 1}.png`,
+      path: `C:/input/look-${index + 1}.png`,
+      selected: true,
+      prompt: `提示词-${index + 1}`,
+      imageType: index % 2 === 0 ? '商品主图' : '细节图'
+    }))
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-three-batches',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 100,
+        size: '1:1',
+        imageAssignments
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(800)
+    expect(result.groupedResults).toHaveLength(100)
+    expect(result.groupedResults.every((group) => group.outputs.length === 8)).toBe(true)
+    expect(result.summary.title).toBe('套图设计 100 组')
+  })
+
   it('rejects series-generate drafts that do not provide a full set of prompt assignments', async () => {
     const service = createService()
 

@@ -132,6 +132,8 @@ const isAdminApiConfigUnlocked = ref(false)
 const isAdminApiKeyDialogVisible = ref(false)
 const adminApiKeyDraft = ref('')
 const isAdminApiKeySaving = ref(false)
+const adminPasswordFeedback = ref('')
+const adminApiKeyFeedback = ref('')
 let actionNoticeTimer = null
 let submitButtonStateTimer = null
 let studioRuntimePollTimer = null
@@ -1355,14 +1357,20 @@ async function handleSaveUploadDirectory(menuKey) {
 function handleCloseAdminPasswordDialog() {
   isAdminPasswordDialogVisible.value = false
   isAdminPasswordSubmitting.value = false
+  isAdminApiConfigUnlocked.value = false
+  isAdminApiKeyDialogVisible.value = false
   adminPasswordDraft.value = ''
+  adminPasswordFeedback.value = ''
+  adminApiKeyFeedback.value = ''
 }
 
 function handleConfirmAdminPassword() {
   isAdminPasswordSubmitting.value = true
+  adminPasswordFeedback.value = ''
 
   if (adminPasswordDraft.value !== 'qiuai@123') {
     isAdminPasswordSubmitting.value = false
+    adminPasswordFeedback.value = '密码错误，请重新输入'
     showActionFeedback({
       type: 'error',
       title: '失败',
@@ -1375,14 +1383,25 @@ function handleConfirmAdminPassword() {
   isAdminPasswordDialogVisible.value = false
   isAdminApiConfigUnlocked.value = true
   isAdminApiKeyDialogVisible.value = true
+  adminApiKeyFeedback.value = '管理员验证通过，请继续保存 API-Key'
+  showActionFeedback({
+    type: 'success',
+    title: '成功',
+    message: '管理员验证通过，请继续保存 API-Key'
+  })
 }
 
 function handleCloseAdminApiKeyDialog() {
   isAdminApiKeyDialogVisible.value = false
+  isAdminApiConfigUnlocked.value = false
+  adminPasswordDraft.value = ''
+  adminPasswordFeedback.value = ''
+  adminApiKeyFeedback.value = ''
 }
 
 async function handleSaveAdminApiKey() {
   isAdminApiKeySaving.value = true
+  adminApiKeyFeedback.value = ''
 
   try {
     const savedSettings = await saveAdminApiKey({
@@ -1392,13 +1411,15 @@ async function handleSaveAdminApiKey() {
 
     adminApiKeyDraft.value = savedSettings.apiKey || ''
     isAdminApiConfigUnlocked.value = true
+    adminApiKeyFeedback.value = 'API-Key 已保存成功'
     showActionFeedback({
       type: 'success',
       title: '成功',
-      message: 'API-Key 已更新'
+      message: 'API-Key 已保存成功'
     })
   } catch (error) {
     console.error('Failed to save admin api key', error)
+    adminApiKeyFeedback.value = buildErrorMessage(error, '保存未完成')
     showActionFeedback({
       type: 'error',
       title: '失败',
@@ -1757,6 +1778,7 @@ onBeforeUnmount(() => {
         :visible="isAdminPasswordDialogVisible"
         :password="adminPasswordDraft"
         :is-submitting="isAdminPasswordSubmitting"
+        :feedback-message="adminPasswordFeedback"
         @update-password="adminPasswordDraft = $event"
         @confirm="handleConfirmAdminPassword"
         @close="handleCloseAdminPasswordDialog"
@@ -1766,6 +1788,7 @@ onBeforeUnmount(() => {
         :visible="isAdminApiConfigUnlocked && isAdminApiKeyDialogVisible"
         :api-key="adminApiKeyDraft"
         :is-saving="isAdminApiKeySaving"
+        :feedback-message="adminApiKeyFeedback"
         @update-api-key="adminApiKeyDraft = $event"
         @save="handleSaveAdminApiKey"
         @close="handleCloseAdminApiKeyDialog"
