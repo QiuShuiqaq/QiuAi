@@ -250,20 +250,57 @@ describe('studioImageGenerationService', () => {
     expect(createDrawTaskDependency.mock.calls[1][0].model).toBe('gpt-image-2')
     expect(createDrawTaskDependency.mock.calls[1][0].aspectRatio).toBe('3:4')
     expect(createDrawTaskDependency.mock.calls.map((call) => call[0].prompt)).toEqual([
-      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商视觉风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n细节特写\n重点展示局部材质与纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商视觉风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n细节特写\n重点展示局部材质与纹理\n\n严格避免以下问题：水印，logo，文字，低清像素'
+      '统一高级电商视觉风格\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商视觉风格\n细节特写\n重点展示局部材质与纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商视觉风格\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商视觉风格\n细节特写\n重点展示局部材质与纹理\n\n严格避免以下问题：水印，logo，文字，低清像素'
     ])
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults[0].outputs).toHaveLength(3)
     expect(result.groupedResults[0].outputs[0].title).toBe('主图0')
     expect(result.groupedResults[0].outputs[0].promptFinal).toBe(
-      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素'
+      '统一高级电商视觉风格\n高清\n白底\n突出产品主视觉效果\n\n严格避免以下问题：水印，logo，文字，低清像素'
     )
     expect(result.groupedResults[0].outputs[1].title).toBe('look-2.png')
     expect(result.groupedResults[0].outputs[2].title).toBe('细节图0')
     expect(result.summary.title).toBe('套图设计 2 组')
+  })
+
+  it('does not append image-type template instructions again when series-design assignment prompt already contains the selected template content', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    await service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-no-template-duplication',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 1,
+        size: '1:1',
+        imageAssignments: [
+          {
+            id: 'image-1',
+            name: 'look-1.png',
+            path: 'C:/input/look-1.png',
+            selected: true,
+            prompt: '按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n高清\n白底\n突出产品主视觉效果',
+            imageType: '商品主图'
+          }
+        ]
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(1)
+    expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe(
+      '统一高级电商视觉风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n高清\n白底\n突出产品主视觉效果'
+    )
   })
 
   it('keeps series-design batches running when one selected image hits output moderation and falls back to the original image', async () => {
@@ -494,22 +531,61 @@ describe('studioImageGenerationService', () => {
 
     expect(createDrawTaskDependency).toHaveBeenCalledTimes(6)
     expect(createDrawTaskDependency.mock.calls.map((call) => call[0].prompt)).toEqual([
-      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商详情页风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示材质和纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n提供另一个主视觉构图\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商详情页风格\n按细节图生成：输出产品局部放大图，重点展示材质、做工、纹理或关键细节；禁止生成整套场景主视觉。\n重点展示材质和纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
-      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n提供另一个主视觉构图\n\n严格避免以下问题：水印，logo，文字，低清像素'
+      '统一高级电商详情页风格\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商详情页风格\n重点展示材质和纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商详情页风格\n提供另一个主视觉构图\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商详情页风格\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商详情页风格\n重点展示材质和纹理\n\n严格避免以下问题：水印，logo，文字，低清像素',
+      '统一高级电商详情页风格\n提供另一个主视觉构图\n\n严格避免以下问题：水印，logo，文字，低清像素'
     ])
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults[0].outputs).toHaveLength(3)
     expect(result.groupedResults[0].outputs[0].title).toBe('主图0')
     expect(result.groupedResults[0].outputs[0].promptFinal).toBe(
-      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素'
+      '统一高级电商详情页风格\n突出产品整体外观和电商氛围\n\n严格避免以下问题：水印，logo，文字，低清像素'
     )
     expect(result.groupedResults[0].outputs[1].title).toBe('细节图0')
     expect(result.groupedResults[0].outputs[2].title).toBe('主图1')
     expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
+  })
+
+  it('does not append image-type template instructions again when series-generate prompt already contains the selected template content', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`,
+      prompt
+    }))
+    const service = createService({
+      createDrawTaskDependency
+    })
+
+    await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-no-template-duplication',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一高级电商详情页风格',
+        generateCount: 1,
+        batchCount: 1,
+        promptAssignments: [
+          {
+            index: 1,
+            imageType: '商品主图',
+            prompt: '按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围'
+          }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(1)
+    expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe(
+      '统一高级电商详情页风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出产品整体外观和电商氛围'
+    )
   })
 
   it('supports series-generate group sizes above 20 and preserves all outputs', async () => {
@@ -674,7 +750,7 @@ describe('studioImageGenerationService', () => {
     expect(maxConcurrent).toBe(5)
   })
 
-  it('uses edited fixed prompt templates from the prompt library when composing image-type prompts', async () => {
+  it('does not append prompt template service content during generation when assignment prompt is already the source of truth', async () => {
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
       id: `remote-${createDrawTaskDependency.mock.calls.length}`,
       prompt
@@ -714,7 +790,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe('统一风格\n这里是用户改过的主图按钮提示词\n补充主体卖点')
+    expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe('统一风格\n补充主体卖点')
   })
 
   it('does not append negative prompt section when series-generate negativePrompt is empty', async () => {
@@ -748,7 +824,7 @@ describe('studioImageGenerationService', () => {
     })
 
     expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe(
-      '统一风格\n按商品主图生成：输出产品电商效果图，突出主体展示、卖点呈现与主视觉氛围；禁止偏离商品主体。\n突出主体卖点'
+      '统一风格\n突出主体卖点'
     )
   })
 })

@@ -84,6 +84,13 @@ const warningRiskHints = [
 
 const defaultNegativeTemplateHints = ['电商通用', '电商模特', '电商静物']
 const negativeTemplatePlaceholder = defaultNegativeTemplateHints.join(' / ')
+const DEFAULT_TAG_CATEGORY_IDS = new Set([
+  'tag-category-art-style',
+  'tag-category-shot-composition',
+  'tag-category-lighting-tone',
+  'tag-category-material-texture',
+  'tag-category-quality-params'
+])
 
 const tagCategoryBlocks = computed(() => {
   return tagCategoryDrafts.value.map((category, index) => ({
@@ -300,6 +307,10 @@ function removeTagCategory(category) {
   })
 }
 
+function isDefaultTagCategory(categoryId = '') {
+  return DEFAULT_TAG_CATEGORY_IDS.has(String(categoryId || ''))
+}
+
 function startCreateTag(category) {
   tagCreatorState.categoryKey = category.categoryKey
   tagCreatorState.value = ''
@@ -460,7 +471,16 @@ function removeTag(categoryId, tagId) {
                     <strong>{{ category.name || '未命名分类' }}</strong>
                     <div class="prompt-tag-category-card__actions">
                       <button class="secondary-action secondary-action--compact" type="button" @click="startRenameCategory(category)">编辑分类</button>
-                      <button class="secondary-action secondary-action--compact" type="button" :disabled="!category.id" @click="removeTagCategory(category)">删除分类</button>
+                      <button
+                        v-if="!isDefaultTagCategory(category.id)"
+                        class="secondary-action secondary-action--compact"
+                        type="button"
+                        :disabled="!category.id"
+                        :title="isDefaultTagCategory(category.id) ? '默认标签分类不可删除' : ''"
+                        @click="removeTagCategory(category)"
+                      >
+                        删除分类
+                      </button>
                     </div>
                   </template>
                 </div>

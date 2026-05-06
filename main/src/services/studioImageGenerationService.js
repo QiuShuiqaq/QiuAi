@@ -9,7 +9,7 @@ const MAX_SERIES_DESIGN_IMAGES = 30
 const SERIES_DESIGN_SOFT_WEIGHT = 12
 const SERIES_GENERATE_SOFT_TOTAL = 8
 const SERIES_GROUP_CONCURRENCY = 5
-const MAX_SERIES_GENERATE_GROUP_SIZE = 100
+const MAX_SERIES_GENERATE_GROUP_SIZE = 500
 const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
 const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
   商品主图: {
@@ -244,29 +244,7 @@ function normalizeSeriesGeneratePromptAssignments(promptAssignments = [], genera
   })
 }
 
-function buildTemplatePromptMap(promptTemplateService) {
-  const templateMap = new Map()
-  if (!promptTemplateService || typeof promptTemplateService.listTemplates !== 'function') {
-    return templateMap
-  }
-
-  for (const template of promptTemplateService.listTemplates()) {
-    templateMap.set(template.id, String(template.prompt || '').trim())
-  }
-
-  return templateMap
-}
-
-function resolveImageTypeInstruction(imageType, templatePromptMap = new Map()) {
-  const config = SERIES_GENERATE_IMAGE_TYPE_CONFIG[imageType]
-  if (!config) {
-    return ''
-  }
-
-  return templatePromptMap.get(config.templateId) || config.instruction
-}
-
-function buildSeriesGenerateOutputDescriptors(promptAssignments = [], templatePromptMap = new Map()) {
+function buildSeriesGenerateOutputDescriptors(promptAssignments = []) {
   const typeCounters = new Map()
 
   return promptAssignments.map((assignment, index) => {
@@ -280,12 +258,12 @@ function buildSeriesGenerateOutputDescriptors(promptAssignments = [], templatePr
     return {
       ...assignment,
       outputTitle: `${config.outputLabel}${currentCount}`,
-      composedPrompt: composePrompt([resolveImageTypeInstruction(assignment.imageType, templatePromptMap), assignment.prompt])
+      composedPrompt: composePrompt([assignment.prompt])
     }
   })
 }
 
-function buildSeriesDesignOutputDescriptors(assignments = [], templatePromptMap = new Map()) {
+function buildSeriesDesignOutputDescriptors(assignments = []) {
   const typeCounters = new Map()
 
   return assignments.map((assignment, index) => {
@@ -305,7 +283,6 @@ function buildSeriesDesignOutputDescriptors(assignments = [], templatePromptMap 
         ? `${config.outputLabel}${currentCount}`
         : config.outputLabel,
       composedPrompt: composePrompt([
-        resolveImageTypeInstruction(assignment.imageType, templatePromptMap),
         ...(Array.isArray(assignment.tagNames) ? assignment.tagNames : []),
         assignment.prompt
       ])
@@ -476,7 +453,6 @@ function createStudioImageGenerationService({
   messageRecorder,
   runtimeLogger,
   requestMetricRecorder,
-  promptTemplateService = null,
   createHttpClientServiceDependency = createHttpClientService,
   createDrawTaskDependency = createDrawTask,
   getCompletedDrawResultDependency = getCompletedDrawResult,
@@ -669,8 +645,7 @@ function createStudioImageGenerationService({
 
   async function generateSeriesDesignResults({ draft, taskId, outputDirectory, onProgress }) {
     const assignments = Array.isArray(draft.imageAssignments) ? draft.imageAssignments : []
-    const templatePromptMap = buildTemplatePromptMap(promptTemplateService)
-    const selectedAssignments = buildSeriesDesignOutputDescriptors(assignments.filter((item) => item.selected !== false), templatePromptMap)
+    const selectedAssignments = buildSeriesDesignOutputDescriptors(assignments.filter((item) => item.selected !== false))
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const progressReporter = createAggregateProgressReporter({
       totalSubtasks: Math.max(1, selectedAssignments.length * batchCount),
@@ -809,8 +784,7 @@ function createStudioImageGenerationService({
   async function generateSeriesGenerateResults({ draft, taskId, outputDirectory, onProgress }) {
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const promptAssignments = normalizeSeriesGeneratePromptAssignments(draft.promptAssignments, draft.generateCount)
-    const templatePromptMap = buildTemplatePromptMap(promptTemplateService)
-    const outputDescriptors = buildSeriesGenerateOutputDescriptors(promptAssignments, templatePromptMap)
+    const outputDescriptors = buildSeriesGenerateOutputDescriptors(promptAssignments)
     const generateCount = outputDescriptors.length
     const totalImageCount = batchCount * generateCount
     const progressReporter = createAggregateProgressReporter({

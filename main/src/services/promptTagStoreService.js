@@ -198,6 +198,7 @@ const defaultCategories = [
     ]
   }
 ]
+const defaultCategoryIdSet = new Set(defaultCategories.map((category) => category.id))
 
 function normalizeTag(tag = {}) {
   return {
@@ -333,6 +334,10 @@ function createPromptTagStoreService({ store, createId = () => crypto.randomUUID
       return {
         ok: true
       }
+    }
+
+    if (defaultCategoryIdSet.has(normalizedCategoryId)) {
+      throw new Error('默认标签分类不可删除')
     }
 
     if ((targetCategory.tags || []).length > 0) {

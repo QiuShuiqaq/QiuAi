@@ -62,4 +62,14 @@ describe('promptTagStoreService', () => {
     })
     expect(service.listCategories().find((item) => item.id === savedCategory.id)?.tags || []).toHaveLength(0)
   })
+
+  it('does not allow removing default tag categories even when they are empty', async () => {
+    const { createPromptTagStoreService, defaultCategories } = await import('../../main/src/services/promptTagStoreService.js')
+    const service = createPromptTagStoreService({
+      store: createMemoryStore()
+    })
+
+    await expect(service.removeCategory(defaultCategories[0].id)).rejects.toThrow('默认标签分类不可删除')
+    expect(service.listCategories().some((item) => item.id === defaultCategories[0].id)).toBe(true)
+  })
 })

@@ -188,7 +188,7 @@ function createImageAsset(file, idPrefix, preview = true) {
 }
 
 function createSeriesGeneratePromptAssignments(count, existingAssignments = []) {
-  const normalizedCount = Math.max(1, Math.min(100, Number(count) || 1))
+  const normalizedCount = Math.max(1, Math.min(500, Number(count) || 1))
   const sourceAssignments = Array.isArray(existingAssignments) ? existingAssignments : []
 
   return Array.from({ length: normalizedCount }, (_unused, index) => {
@@ -373,7 +373,7 @@ function normalizeStoredDraft(menuKey, storedDraft = {}) {
   }
 
   if (menuKey === 'series-generate') {
-    const generateCount = Math.max(1, Math.min(100, Number(normalizedDraft.generateCount) || 1))
+    const generateCount = Math.max(1, Math.min(500, Number(normalizedDraft.generateCount) || 1))
     normalizedDraft.generateCount = generateCount
     normalizedDraft.promptAssignments = createSeriesGeneratePromptAssignments(generateCount, normalizedDraft.promptAssignments)
   }
@@ -742,8 +742,45 @@ async function loadNegativePromptTemplateState() {
 async function loadPromptTagCategoryState() {
   try {
     promptTagCategories.value = await listPromptTagCategories()
+    await cleanupDraftSelectedGlobalTags()
   } catch (error) {
     console.error('Failed to load prompt tag categories', error)
+  }
+}
+
+function filterInvalidSelectedGlobalTagIds(tagIds = []) {
+  const validTagIds = new Set(promptTagMap.value.keys())
+  return (Array.isArray(tagIds) ? tagIds : []).filter((tagId) => {
+    return typeof tagId === 'string' && tagId.trim() && validTagIds.has(tagId)
+  })
+}
+
+async function cleanupDraftSelectedGlobalTags() {
+  const menuKeys = ['series-design', 'series-generate']
+
+  for (const menuKey of menuKeys) {
+    const currentDraft = formDrafts.value[menuKey]
+    if (!currentDraft) {
+      continue
+    }
+
+    const nextSelectedGlobalTagIds = filterInvalidSelectedGlobalTagIds(currentDraft.selectedGlobalTagIds)
+    const currentSelectedGlobalTagIds = Array.isArray(currentDraft.selectedGlobalTagIds) ? currentDraft.selectedGlobalTagIds : []
+
+    if (nextSelectedGlobalTagIds.length === currentSelectedGlobalTagIds.length) {
+      continue
+    }
+
+    const nextDraft = syncDraftGlobalPrompt(menuKey, {
+      ...currentDraft,
+      selectedGlobalTagIds: nextSelectedGlobalTagIds,
+      legacyGlobalPrompt: '',
+      globalPrompt: ''
+    })
+
+    replaceDraft(menuKey, nextDraft)
+    clearDraftPersistTimer(menuKey)
+    await persistDraftPatch(menuKey, nextDraft)
   }
 }
 
@@ -945,7 +982,7 @@ function handleFieldUpdate({ field, value }) {
   }
 
   if (activeMenu.value === 'series-generate' && field === 'generateCount') {
-    const generateCount = Math.max(1, Math.min(100, Number(value) || 1))
+    const generateCount = Math.max(1, Math.min(500, Number(value) || 1))
     nextDraft = {
       ...currentDraft,
       generateCount,
@@ -1217,7 +1254,7 @@ function validateCurrentTaskBeforeSubmit() {
   }
 
   if (activeMenu.value === 'series-generate') {
-    const generateCount = Math.max(1, Math.min(100, Number(draft.generateCount) || 1))
+    const generateCount = Math.max(1, Math.min(500, Number(draft.generateCount) || 1))
     const promptAssignments = createSeriesGeneratePromptAssignments(generateCount, draft.promptAssignments)
 
     if (!draft.sourceImage) {

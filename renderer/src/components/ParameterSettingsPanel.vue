@@ -747,7 +747,7 @@ function isTagPickerVisible(menuKey) {
                 class="stepper-button stepper-button--decrement"
                 type="button"
                 aria-label="减少生成数量"
-                @click="stepField('generateCount', draftForm.generateCount, -1, 1, 100)"
+                @click="stepField('generateCount', draftForm.generateCount, -1, 1, 500)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--left"></span>
               </button>
@@ -756,14 +756,14 @@ function isTagPickerVisible(menuKey) {
                 class="stepper-value"
                 type="number"
                 min="1"
-                max="100"
-                @input="updateStepperField('generateCount', $event.target.value, 1, 100)"
+                max="500"
+                @input="updateStepperField('generateCount', $event.target.value, 1, 500)"
               />
               <button
                 class="stepper-button stepper-button--increment"
                 type="button"
                 aria-label="增加生成数量"
-                @click="stepField('generateCount', draftForm.generateCount, 1, 1, 100)"
+                @click="stepField('generateCount', draftForm.generateCount, 1, 1, 500)"
               >
                 <span class="stepper-button__triangle stepper-button__triangle--right"></span>
               </button>

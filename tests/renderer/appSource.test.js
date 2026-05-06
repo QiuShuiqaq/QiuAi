@@ -171,10 +171,13 @@ describe('App source', () => {
     expect(source).not.toContain("if (activeMenu.value === 'copywriting')")
     expect(source).toContain('currentModelOptions')
     expect(source).toContain('const allPromptTemplates = computed(() => {')
-    expect(source).toContain('Math.min(100')
+    expect(source).toContain('Math.min(500')
     expect(source).toContain('currentLongRunningHint')
     expect(source).toContain('当前任务量很大，将进入长队列执行。')
     expect(source).toContain('当前任务量较大，生成时间会明显变长。')
+    expect(source).toContain('filterInvalidSelectedGlobalTagIds')
+    expect(source).toContain('cleanupDraftSelectedGlobalTags')
+    expect(source).toContain('await persistDraftPatch(menuKey, nextDraft)')
   })
 
   it('defines a recharge catalog for the model pricing page', () => {
