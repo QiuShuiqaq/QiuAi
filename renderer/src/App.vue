@@ -107,11 +107,13 @@ const activeMenu = ref('workspace')
 const isApplyingCreditAdjustment = ref(false)
 const downloadCleanupEnabled = ref(true)
 const selectedExportIds = ref([])
+const selectedExportIdsByMenu = ref(createEmptyExportSelectionsByMenu())
 const submitButtonState = ref('idle')
 const tasks = ref([])
 const formDrafts = ref(createDefaultFormDrafts())
 const resultsByMenu = ref(createEmptyResultsByMenu())
 const exportItemsByMenu = ref(createEmptyExportItemsByMenu())
+const previousExportItemsByMenu = ref(createEmptyExportItemsByMenu())
 const workspaceDashboard = ref(createEmptyWorkspaceDashboard())
 const hostInfo = ref(createEmptyHostInfo())
 const promptTemplates = ref([])
@@ -305,6 +307,10 @@ function createEmptyResultsByMenu() {
 }
 
 function createEmptyExportItemsByMenu() {
+  return Object.fromEntries(menuItems.map((item) => [item.key, []]))
+}
+
+function createEmptyExportSelectionsByMenu() {
   return Object.fromEntries(menuItems.map((item) => [item.key, []]))
 }
 
@@ -633,11 +639,36 @@ const exportItems = computed(() => {
   return exportItemsByMenu.value[activeMenu.value] || exportItemsByMenu.value.workspace
 })
 
-function resolveSelectedExportIdsForMenu(menuKey) {
+function syncSelectedExportIdsForMenu(menuKey) {
   const currentExportItems = exportItemsByMenu.value[menuKey] || []
-  return currentExportItems
+  const previousItems = previousExportItemsByMenu.value[menuKey] || []
+  const previousSelection = new Set(selectedExportIdsByMenu.value[menuKey] || [])
+  const existingIds = new Set(previousItems.map((item) => item?.id).filter((itemId) => typeof itemId === 'string' && itemId.trim()))
+
+  const nextSelectedIds = currentExportItems
     .map((item) => item?.id)
     .filter((itemId) => typeof itemId === 'string' && itemId.trim())
+    .filter((itemId) => !existingIds.has(itemId) || previousSelection.has(itemId))
+
+  selectedExportIdsByMenu.value = {
+    ...selectedExportIdsByMenu.value,
+    [menuKey]: nextSelectedIds
+  }
+
+  if (menuKey === activeMenu.value) {
+    selectedExportIds.value = nextSelectedIds
+  }
+}
+
+function syncAllSelectedExportIds() {
+  menuItems.forEach((item) => {
+    syncSelectedExportIdsForMenu(item.key)
+  })
+
+  previousExportItemsByMenu.value = Object.fromEntries(menuItems.map((item) => [
+    item.key,
+    Array.isArray(exportItemsByMenu.value[item.key]) ? [...exportItemsByMenu.value[item.key]] : []
+  ]))
 }
 
 const fixedPromptTemplates = computed(() => {
@@ -753,7 +784,7 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
     ...createEmptyExportItemsByMenu(),
     ...(snapshot.exportItemsByMenu || {})
   }
-  selectedExportIds.value = resolveSelectedExportIdsForMenu(activeMenu.value)
+  syncAllSelectedExportIds()
   tasks.value = Array.isArray(snapshot.tasks) ? snapshot.tasks : []
   handleFailedTaskNotifications(tasks.value)
   workspaceDashboard.value = {
@@ -1000,7 +1031,7 @@ function handleMenuSelect(menuKey) {
   // 菜单点击事件预留：后续可在这里接入真实业务工作区切换。
   activeMenu.value = menuKey
   ensureDraftForMenu(menuKey)
-  selectedExportIds.value = resolveSelectedExportIdsForMenu(menuKey)
+  selectedExportIds.value = [...(selectedExportIdsByMenu.value[menuKey] || [])]
 }
 
 async function persistDraftPatch(menuKey, patch) {
@@ -1478,6 +1509,10 @@ async function handleSubmitTask() {
     })
     upsertTaskIntoState(createdTask)
     selectedExportIds.value = []
+    selectedExportIdsByMenu.value = {
+      ...selectedExportIdsByMenu.value,
+      [activeMenu.value]: []
+    }
     setSubmitButtonState('success')
     showActionFeedback({
       type: 'success',
@@ -1500,10 +1535,18 @@ async function handleSubmitTask() {
 function handleToggleExportItem(itemId) {
   if (selectedExportIds.value.includes(itemId)) {
     selectedExportIds.value = selectedExportIds.value.filter((currentId) => currentId !== itemId)
+    selectedExportIdsByMenu.value = {
+      ...selectedExportIdsByMenu.value,
+      [activeMenu.value]: selectedExportIds.value
+    }
     return
   }
 
   selectedExportIds.value = [...selectedExportIds.value, itemId]
+  selectedExportIdsByMenu.value = {
+    ...selectedExportIdsByMenu.value,
+    [activeMenu.value]: selectedExportIds.value
+  }
 }
 
 async function handleBatchDownload() {
@@ -1539,6 +1582,10 @@ async function handleBatchDownload() {
       })))
       const hasCleanupFailure = cleanupResults.some((result) => result.status === 'rejected')
       selectedExportIds.value = []
+      selectedExportIdsByMenu.value = {
+        ...selectedExportIdsByMenu.value,
+        [activeMenu.value]: []
+      }
       await loadStudioSnapshot({
         preserveDrafts: true,
         preserveApiConfig: true,
@@ -1624,6 +1671,10 @@ async function handleDeleteExportItem(exportItemId) {
       exportItemId
     })
     selectedExportIds.value = selectedExportIds.value.filter((currentId) => currentId !== exportItemId)
+    selectedExportIdsByMenu.value = {
+      ...selectedExportIdsByMenu.value,
+      [activeMenu.value]: selectedExportIds.value
+    }
     await loadStudioSnapshot()
     showActionFeedback({
       type: 'success',

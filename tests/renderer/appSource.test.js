@@ -313,11 +313,18 @@ describe('App source', () => {
     expect(source).toContain('批量下载成功，但部分结果文件夹自动清理失败')
   })
 
-  it('defaults export folders to checked state whenever export items refresh', () => {
+  it('preserves export folder checkbox choices across refreshes while auto-selecting only new items', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'renderer/src/App.vue'), 'utf8')
 
-    expect(source).toContain('function resolveSelectedExportIdsForMenu(menuKey)')
-    expect(source).toContain('selectedExportIds.value = resolveSelectedExportIdsForMenu(activeMenu.value)')
-    expect(source).toContain('selectedExportIds.value = resolveSelectedExportIdsForMenu(menuKey)')
+    expect(source).toContain('const selectedExportIdsByMenu = ref(createEmptyExportSelectionsByMenu())')
+    expect(source).toContain('function createEmptyExportSelectionsByMenu()')
+    expect(source).toContain('function syncSelectedExportIdsForMenu(menuKey)')
+    expect(source).toContain('const previousSelection = new Set(selectedExportIdsByMenu.value[menuKey] || [])')
+    expect(source).toContain('const existingIds = new Set(previousItems.map((item) => item?.id).filter((itemId) => typeof itemId === \'string\' && itemId.trim()))')
+    expect(source).toContain('return !existingIds.has(itemId) || previousSelection.has(itemId)')
+    expect(source).toContain('selectedExportIdsByMenu.value = {')
+    expect(source).toContain('[menuKey]: nextSelectedIds')
+    expect(source).not.toContain('selectedExportIds.value = resolveSelectedExportIdsForMenu(activeMenu.value)')
+    expect(source).not.toContain('selectedExportIds.value = resolveSelectedExportIdsForMenu(menuKey)')
   })
 })

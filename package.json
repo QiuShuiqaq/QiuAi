@@ -1,7 +1,7 @@
 {
   "name": "qiuai",
   "productName": "QiuAi",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Desktop image generation tool for gpt-image-2.",
   "author": {
@@ -19,7 +19,7 @@
   "build": {
     "appId": "com.qiuai.desktop",
     "directories": {
-      "output": "../package/QiuAi-win"
+      "output": "../package/QiuAi1.2.2-win"
     },
     "files": [
       "main/**/*",
@@ -59,6 +59,7 @@
     "archiver": "^7.0.1",
     "axios": "1.6.8",
     "electron-store": "8.2.0",
+    "rxjs": "^7.8.2",
     "vue": "3.5.13"
   },
   "devDependencies": {

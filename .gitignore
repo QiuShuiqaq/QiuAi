@@ -12,6 +12,14 @@ DATA/taskmanager.json
 DATA/input/
 DATA/output/
 
+renderer/dist/
+runtime-logs/
+tmp/
+tmp-electron-stdout.log
+tmp-electron-stderr.log
+
+docs/superpowers/
+
 *.log
 *.tmp
 *.temp

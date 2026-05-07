@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QiuAi 产品使用指导说明书</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #e8decf;
+      --brand: #2f6b4f;
+      --brand-soft: rgba(47, 107, 79, 0.08);
+      --accent: #8b5e34;
+      --shadow: 0 18px 48px rgba(55, 42, 24, 0.08);
+      --radius: 18px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(47, 107, 79, 0.08), transparent 32%),
+        radial-gradient(circle at top right, rgba(139, 94, 52, 0.08), transparent 26%),
+        linear-gradient(180deg, #f8f5ef 0%, #f3eee6 100%);
+      line-height: 1.75;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .page { max-width: var(--max); margin: 0 auto; padding: 28px 20px 56px; }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(47, 107, 79, 0.96), rgba(56, 84, 64, 0.96));
+      color: #f7f6f2;
+      border-radius: 26px;
+      padding: 34px 36px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -40px -60px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .hero h1 { margin: 0 0 12px; font-size: clamp(30px, 5vw, 42px); line-height: 1.15; }
+    .hero p { margin: 0; max-width: 760px; color: rgba(247, 246, 242, 0.88); font-size: 16px; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .hero-meta span {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      font-size: 13px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 22px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    .toc, .content {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .toc { position: sticky; top: 18px; padding: 22px 18px; }
+    .toc h2 { margin: 0 0 14px; font-size: 18px; }
+    .toc ol { margin: 0; padding-left: 18px; }
+    .toc li + li { margin-top: 8px; }
+    .toc a { color: var(--muted); transition: color 0.2s ease; }
+    .toc a:hover { color: var(--brand); }
+
+    .content { padding: 28px; }
+    .section + .section { margin-top: 34px; padding-top: 30px; border-top: 1px dashed var(--line); }
+    .section h2 { margin: 0 0 14px; font-size: 26px; color: var(--brand); }
+    .section h3 { margin: 20px 0 8px; font-size: 18px; color: var(--accent); }
+    .section p { margin: 10px 0; }
+    .section ul, .section ol { margin: 10px 0; padding-left: 22px; }
+    .section li + li { margin-top: 6px; }
+
+    .card {
+      background: #fffaf2;
+      border: 1px solid #efe1c9;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-top: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .grid .card { margin-top: 0; }
+
+    .note {
+      border-left: 4px solid var(--brand);
+      background: var(--brand-soft);
+      border-radius: 0 12px 12px 0;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+
+    .footer { margin-top: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 16px 12px 28px; }
+      .hero, .content, .toc { padding: 20px 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .section h2 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1>QiuAi 产品使用指导说明书</h1>
+      <p>本说明书面向普通用户，按照软件左侧侧边栏的实际功能板块编写，帮助你快速理解 QiuAi 的使用方式、任务流程和常见问题处理方法。</p>
+      <div class="hero-meta">
+        <span>版本：QiuAi 1.2.2</span>
+        <span>适用对象：普通使用者</span>
+        <span>文档类型：产品使用说明</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="toc">
+        <h2>目录</h2>
+        <ol>
+          <li><a href="#section-1">软件整体界面说明</a></li>
+          <li><a href="#section-2">使用前先了解</a></li>
+          <li><a href="#section-3">工作台</a></li>
+          <li><a href="#section-4">单图测试</a></li>
+          <li><a href="#section-5">单图设计</a></li>
+          <li><a href="#section-6">套图设计</a></li>
+          <li><a href="#section-7">套图生成</a></li>
+          <li><a href="#section-8">模型价格</a></li>
+          <li><a href="#section-9">提示词库</a></li>
+          <li><a href="#section-10">结果导出</a></li>
+          <li><a href="#section-11">常见使用建议</a></li>
+          <li><a href="#section-12">常见问题</a></li>
+          <li><a href="#section-13">推荐使用流程</a></li>
+          <li><a href="#section-14">结语</a></li>
+        </ol>
+      </aside>
+
+      <main class="content">
+        <section id="section-1" class="section">
+          <h2>1. 软件整体界面说明</h2>
+          <p>QiuAi 的主界面可以理解为 4 个区域：</p>
+          <div class="grid">
+            <div class="card"><h3>顶部工具栏</h3><p>用于查看授权状态、执行一键清理、切换主题，以及查看服务方联系方式。</p></div>
+            <div class="card"><h3>左侧侧边栏</h3><p>主导航区，包含：工作台、单图测试、单图设计、套图设计、套图生成、模型价格、提示词库。</p></div>
+            <div class="card"><h3>中间主工作区</h3><p>用于填写参数、上传图片、选择模型、设置提示词，以及查看生图结果。</p></div>
+            <div class="card"><h3>右侧辅助区</h3><p>在工作台中显示任务队列，在生图相关页面中显示结果导出。</p></div>
+          </div>
+        </section>
+
+        <section id="section-2" class="section">
+          <h2>2. 使用前先了解</h2>
+          <h3>2.1 授权与配置</h3>
+          <p>软件正常打开并显示“已激活”后即可使用。API 已由服务方预配置，普通用户不需要自行修改。</p>
+          <h3>2.2 一键清理</h3>
+          <p>顶部有“一键清理”按钮。该功能会重置参数草稿、效果展示和日志缓存，但不会删除已导出的结果文件、提示词库、已保存目录和 API 配置。</p>
+          <p>如果当前还有进行中的任务，一键清理可能会失败。</p>
+          <h3>2.3 任务进度</h3>
+          <p>提交任务后，中间“效果展示”区域会显示任务状态、当前进度、当前组、组内进度以及失败原因。任务异常时，请优先看这里。</p>
+        </section>
+
+        <section id="section-3" class="section">
+          <h2>3. 工作台</h2>
+          <p>“工作台”适合用来总览软件当前运行状态。</p>
+          <div class="card">
+            <h3>可以看到什么</h3>
+            <ul>
+              <li>单图测试统计</li>
+              <li>单图设计统计</li>
+              <li>套图设计统计</li>
+              <li>套图生成统计</li>
+              <li>网络监控</li>
+              <li>积分仪表盘</li>
+              <li>积分消息记录</li>
+              <li>服务配置状态</li>
+              <li>用户主机信息</li>
+              <li>任务队列</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>适合什么时候用</h3>
+            <ul>
+              <li>想快速查看最近任务情况</li>
+              <li>想确认积分是否充足</li>
+              <li>想查看网络请求是否正常</li>
+              <li>想结束卡住的任务</li>
+            </ul>
+          </div>
+          <div class="note">右侧“任务队列”会显示任务编号、生成时间、当前进度和当前错误。对于“等待中”“进行中”“待确认”的任务，可以点击“结束任务”主动停止。</div>
+        </section>
+
+        <section id="section-4" class="section">
+          <h2>4. 单图测试</h2>
+          <p>“单图测试”适合做模型对比。它会基于同一张图片、同一套提示词，输出多个模型的效果，方便你判断哪个模型更适合当前场景。</p>
+          <h3>操作步骤</h3>
+          <ol>
+            <li>进入左侧“单图测试”</li>
+            <li>上传 1 张测试图片</li>
+            <li>在“提示词输入区域”填写统一提示词</li>
+            <li>如有需要，在“补充说明”里写补充要求</li>
+            <li>选择输出比例</li>
+            <li>确认对比模型</li>
+            <li>点击“提交任务”</li>
+          </ol>
+        </section>
+
+        <section id="section-5" class="section">
+          <h2>5. 单图设计</h2>
+          <p>“单图设计”适合处理单张图片的正式生成任务。如果你已经明确要用哪个模型，通常直接在这里做。</p>
+          <h3>操作步骤</h3>
+          <ol>
+            <li>进入左侧“单图设计”</li>
+            <li>上传参考图片</li>
+            <li>在“提示词输入区域”输入本次设计要求</li>
+            <li>在“补充说明”中补充风格、材质、光线、构图等细节</li>
+            <li>选择设计模型</li>
+            <li>选择输出比例</li>
+            <li>点击“提交任务”</li>
+          </ol>
+        </section>
+
+        <section id="section-6" class="section">
+          <h2>6. 套图设计</h2>
+          <p>“套图设计”适合多张图片一起生成，每张图可以单独设置，是当前批量工作的核心板块之一。</p>
+          <h3>操作步骤</h3>
+          <ol>
+            <li>上传一整套图片素材</li>
+            <li>填写“全局主提示词”</li>
+            <li>选择模型</li>
+            <li>选择“反向提示词”模板</li>
+            <li>设置“生成组数”</li>
+            <li>对每一张图片分别设置是否参与生成、是否差异化、图片类型、单张比例、单张模型和专属提示词</li>
+            <li>点击“提交任务”</li>
+          </ol>
+          <div class="card"><h3>差异化怎么理解</h3><p>如果某张图片勾选了“差异化”，系统会根据你设置的生成组数，自动展开“专属提示词1、专属提示词2、专属提示词3……”这样的多条输入框。这样每一组生成时，这张图都能使用不同的专属提示词，减少结果过于相似的问题。</p></div>
+        </section>
+
+        <section id="section-7" class="section">
+          <h2>7. 套图生成</h2>
+          <p>“套图生成”适合基于 1 张参考图，批量生成多张不同画面，更适合同一主体下的多图扩展。</p>
+          <h3>操作步骤</h3>
+          <ol>
+            <li>上传 1 张参考图</li>
+            <li>输入“全局风格提示词”</li>
+            <li>选择模型</li>
+            <li>选择“反向提示词”模板</li>
+            <li>设置“生成数量”</li>
+            <li>设置“批次”</li>
+            <li>逐张填写提示词配置</li>
+            <li>点击“提交任务”</li>
+          </ol>
+        </section>
+
+        <section id="section-8" class="section">
+          <h2>8. 模型价格</h2>
+          <p>“模型价格”页主要用于查看积分充值档位和各模型的积分消耗。建议在大批量任务前先看这一页，避免积分不足导致任务中断。</p>
+        </section>
+
+        <section id="section-9" class="section">
+          <h2>9. 提示词库</h2>
+          <p>“提示词库”用于管理正向提示词模板、负向提示词模板，以及查看提示词风险提醒。</p>
+          <div class="grid">
+            <div class="card"><h3>正向提示词</h3><p>可新建、编辑、保存正向模板，也可以删除自定义模板。系统模板和自定义模板统一显示在列表中。</p></div>
+            <div class="card"><h3>负向提示词</h3><p>当前默认内置“电商通用”“电商模特”“电商静物”3 套模板，用于限制水印、变形、模糊、杂乱背景等问题。</p></div>
+            <div class="card"><h3>提示词格式</h3><p>按不同场景给出推荐字符数和写法重点，适合新手快速上手。</p></div>
+            <div class="card"><h3>风险提示区</h3><p>右侧展示违禁提示词和警告提示词，帮助你避开高风险表达。</p></div>
+          </div>
+        </section>
+
+        <section id="section-10" class="section">
+          <h2>10. 结果导出</h2>
+          <p>在“单图测试”“单图设计”“套图设计”“套图生成”页面的右侧，会显示“结果导出”区域。</p>
+          <ul>
+            <li>勾选要导出的结果文件夹</li>
+            <li>打开输出目录</li>
+            <li>删除结果文件夹</li>
+            <li>批量下载</li>
+          </ul>
+          <p>顶部有“自动删除”勾选项，默认开启。批量下载成功后，软件会自动删除已下载完成的源结果文件夹，避免文件长期堆积。</p>
+        </section>
+
+        <section id="section-11" class="section">
+          <h2>11. 常见使用建议</h2>
+          <ul>
+            <li>尽量避免使用“和原图一致”“保持原样”“不改动布局”“轻微修改”等高风险表达。</li>
+            <li>批量任务建议先用 1 组或少量图片测试，确认方向后再放大批次。</li>
+            <li>如果多组结果相似度高，建议开启差异化，并为不同组填写不同专属提示词。</li>
+            <li>大批量任务前先看积分，尤其是套图设计、套图生成和多差异化任务。</li>
+          </ul>
+        </section>
+
+        <section id="section-12" class="section">
+          <h2>12. 常见问题</h2>
+          <div class="card"><h3>为什么提交后失败了</h3><p>常见原因包括：服务配置无效、提示词风险过高、积分不足、网络请求异常、批量任务过大。失败时请优先查看顶部消息提示和结果区中的失败原因。</p></div>
+          <div class="card"><h3>为什么一键清理失败</h3><p>通常是因为当前还有进行中的任务。建议先到“工作台”结束任务，再执行一键清理。</p></div>
+          <div class="card"><h3>为什么结果导出里的文件越来越多</h3><p>如果没有开启“自动删除”，下载后的源结果文件夹会一直保留。建议保持开启。</p></div>
+          <div class="card"><h3>为什么图片看起来相似</h3><p>通常是因为多批次使用了重复提示词。建议开启差异化，并为不同组填写不同专属提示词。</p></div>
+        </section>
+
+        <section id="section-13" class="section">
+          <h2>13. 推荐使用流程</h2>
+          <ol>
+            <li>先看“模型价格”，确认积分和模型成本</li>
+            <li>打开“提示词库”，了解正向模板、负向模板和风险词</li>
+            <li>先用“单图测试”做小范围模型对比</li>
+            <li>再用“单图设计”或“套图设计”进入正式生成</li>
+            <li>生成完成后，在右侧“结果导出”中批量下载</li>
+            <li>如任务异常，到“工作台”查看任务队列和错误提示</li>
+          </ol>
+        </section>
+
+        <section id="section-14" class="section">
+          <h2>14. 结语</h2>
+          <p>QiuAi 当前更适合围绕“参考图 + 提示词 + 批量生成”这一工作流使用。建议先把提示词方向、模型、负向模板和小批次测试跑顺，再放大到正式批量任务，这样整体效率和稳定性会更高。</p>
+        </section>
+      </main>
+    </div>
+
+    <div class="footer">QiuAi 产品使用指导说明书 · HTML 版</div>
+  </div>
+</body>
+</html>
