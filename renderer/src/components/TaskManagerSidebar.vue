@@ -118,6 +118,8 @@ function goToNextPage() {
                 <span class="task-progress__bar" :style="{ width: `${task.progress}%` }"></span>
               </div>
 
+              <p v-if="task.error" class="task-card__error">{{ task.error }}</p>
+
               <div v-if="isStoppableTask(task)" class="task-card__footer">
                 <button
                   class="secondary-action secondary-action--compact"

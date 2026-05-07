@@ -246,10 +246,8 @@ describe('studioWorkspaceService', () => {
     expect(snapshot.formDrafts['single-image'].compareModels).toHaveLength(4)
     expect(snapshot.formDrafts['single-design'].sourceImage).toBe(null)
     expect(snapshot.formDrafts['single-design'].model).toBe('gpt-image-2')
-    expect(snapshot.formDrafts['series-design'].selectedGlobalTagIds).toEqual([])
     expect(snapshot.formDrafts['series-design'].negativeTemplateId).toBe('')
     expect(snapshot.formDrafts['series-design'].negativePrompt).toBe('')
-    expect(snapshot.formDrafts['series-generate'].selectedGlobalTagIds).toEqual([])
     expect(snapshot.formDrafts['series-generate'].negativeTemplateId).toBe('')
     expect(snapshot.formDrafts['series-generate'].negativePrompt).toBe('')
     expect(snapshot.formDrafts['series-design'].imageAssignments).toEqual([])
@@ -406,7 +404,6 @@ describe('studioWorkspaceService', () => {
       formDrafts: {
         'series-design': {
           globalPrompt: '统一风格',
-          selectedGlobalTagIds: [],
           model: 'gpt-image-2',
           taskName: 'legacy-design',
           imageAssignments: [],
@@ -415,7 +412,6 @@ describe('studioWorkspaceService', () => {
         },
         'series-generate': {
           globalPrompt: '统一风格',
-          selectedGlobalTagIds: [],
           model: 'gpt-image-2',
           taskName: 'legacy-generate',
           sourceImage: null,

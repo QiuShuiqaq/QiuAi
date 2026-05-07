@@ -120,10 +120,6 @@ defineProps({
   allPromptTemplates: {
     type: Array,
     required: true
-  },
-  promptTagCategories: {
-    type: Array,
-    required: true
   }
 })
 
@@ -146,11 +142,7 @@ const emit = defineEmits([
   'save-prompt-template',
   'remove-prompt-template',
   'save-negative-prompt-template',
-  'remove-negative-prompt-template',
-  'save-prompt-tag-category',
-  'save-prompt-tag',
-  'remove-prompt-tag',
-  'remove-prompt-tag-category'
+  'remove-negative-prompt-template'
 ])
 </script>
 
@@ -201,15 +193,10 @@ const emit = defineEmits([
           :custom-prompt-templates="customPromptTemplates"
           :fixed-negative-prompt-templates="fixedNegativePromptTemplates"
           :custom-negative-prompt-templates="customNegativePromptTemplates"
-          :prompt-tag-categories="promptTagCategories"
           @save-template="emit('save-prompt-template', $event)"
           @remove-template="emit('remove-prompt-template', $event)"
           @save-negative-template="emit('save-negative-prompt-template', $event)"
           @remove-negative-template="emit('remove-negative-prompt-template', $event)"
-          @save-tag-category="emit('save-prompt-tag-category', $event)"
-          @save-tag="emit('save-prompt-tag', $event)"
-          @remove-tag="emit('remove-prompt-tag', $event)"
-          @remove-tag-category="emit('remove-prompt-tag-category', $event)"
         />
       </section>
     </template>
@@ -228,7 +215,6 @@ const emit = defineEmits([
           :long-running-hint="longRunningHint"
           :task-scale-summary="taskScaleSummary"
           :prompt-templates="allPromptTemplates"
-          :prompt-tag-categories="promptTagCategories"
           :fixed-negative-prompt-templates="fixedNegativePromptTemplates"
           :custom-negative-prompt-templates="customNegativePromptTemplates"
           @update-field="emit('update-field', $event)"

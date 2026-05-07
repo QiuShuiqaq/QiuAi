@@ -97,6 +97,10 @@ const latestTaskMeta = computed(() => {
   ]
 })
 
+const latestTaskError = computed(() => {
+  return String(props.latestTask?.error || '').trim()
+})
+
 const selectedPreview = ref(null)
 
 function openPreview(item) {
@@ -153,6 +157,11 @@ function resolvePromptFinal(value) {
         <div class="task-progress">
           <span class="latest-task-progress__bar" :style="{ width: latestTaskProgressWidth }"></span>
         </div>
+
+        <article v-if="latestTask?.status === '失败' && latestTask?.error" class="latest-task-progress__item">
+          <span>失败原因</span>
+          <strong>{{ latestTaskError }}</strong>
+        </article>
       </section>
 
       <section v-if="showModelPricing" class="result-text-block">

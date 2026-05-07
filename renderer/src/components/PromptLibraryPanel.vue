@@ -17,10 +17,6 @@ const props = defineProps({
   customNegativePromptTemplates: {
     type: Array,
     required: true
-  },
-  promptTagCategories: {
-    type: Array,
-    required: true
   }
 })
 
@@ -28,14 +24,9 @@ const emit = defineEmits([
   'save-template',
   'remove-template',
   'save-negative-template',
-  'remove-negative-template',
-  'save-tag-category',
-  'save-tag',
-  'remove-tag',
-  'remove-tag-category'
+  'remove-negative-template'
 ])
 const fixedTemplateDrafts = ref([])
-const tagCategoryDrafts = ref([])
 const negativePromptDraft = reactive({
   id: '',
   name: '',
@@ -53,16 +44,6 @@ const customDraft = reactive({
   category: '自定义提示词',
   prompt: '',
   source: 'custom'
-})
-
-const tagCreatorState = reactive({
-  categoryKey: '',
-  value: ''
-})
-
-const categoryNameEditingState = reactive({
-  categoryKey: '',
-  value: ''
 })
 
 const bannedRiskHints = [
@@ -84,20 +65,33 @@ const warningRiskHints = [
 
 const defaultNegativeTemplateHints = ['电商通用', '电商模特', '电商静物']
 const negativeTemplatePlaceholder = defaultNegativeTemplateHints.join(' / ')
-const DEFAULT_TAG_CATEGORY_IDS = new Set([
-  'tag-category-art-style',
-  'tag-category-shot-composition',
-  'tag-category-lighting-tone',
-  'tag-category-material-texture',
-  'tag-category-quality-params'
-])
-
-const tagCategoryBlocks = computed(() => {
-  return tagCategoryDrafts.value.map((category, index) => ({
-    ...category,
-    categoryKey: category.id || `draft-category-${index}`
-  }))
-})
+const promptFormatGuide = [
+  {
+    scene: '头像、Q 版人物、表情包',
+    length: '60～150',
+    tip: '主体 + 风格 + 简单背景，简洁干净'
+  },
+  {
+    scene: '单人插画、古风 / 二次元人设',
+    length: '150～300',
+    tip: '外貌 + 服饰 + 姿态 + 氛围 + 画风'
+  },
+  {
+    scene: '产品图、静物、美食',
+    length: '150～300',
+    tip: '产品细节 + 材质 + 光线 + 简约场景'
+  },
+  {
+    scene: '风景、氛围感壁纸',
+    length: '200～400',
+    tip: '环境 + 时间天气 + 光影 + 色调风格'
+  },
+  {
+    scene: '多人剧情、赛博朋克 / 奇幻大场景',
+    length: '400～800',
+    tip: '人物 + 动作 + 环境 + 镜头 + 整体氛围，语句连贯'
+  }
+]
 
 const allTemplateDrafts = computed(() => {
   const customTemplateMap = new Map((props.customPromptTemplates || []).map((template) => [template.id, template]))
@@ -148,26 +142,6 @@ watch(
       category: template.category || '系统提示词',
       prompt: template.prompt || '',
       source: 'system-fixed'
-    }))
-  },
-  {
-    immediate: true,
-    deep: true
-  }
-)
-
-watch(
-  () => props.promptTagCategories,
-  (categories = []) => {
-    tagCategoryDrafts.value = categories.map((category) => ({
-      id: category.id,
-      name: category.name || '',
-      tags: Array.isArray(category.tags)
-        ? category.tags.map((tag) => ({
-            id: tag.id,
-            name: tag.name || ''
-          }))
-        : []
     }))
   },
   {
@@ -257,84 +231,6 @@ function removeNegativePromptTemplate(templateId) {
     resetNegativePromptDraft()
   }
 }
-
-function createTagCategory() {
-  const draftCategory = {
-    id: '',
-    name: '',
-    tags: []
-  }
-  tagCategoryDrafts.value = [...tagCategoryDrafts.value, draftCategory]
-  categoryNameEditingState.categoryKey = `draft-category-${tagCategoryDrafts.value.length - 1}`
-  categoryNameEditingState.value = ''
-}
-
-function startRenameCategory(category) {
-  categoryNameEditingState.categoryKey = category.categoryKey
-  categoryNameEditingState.value = category.name || ''
-}
-
-function cancelRenameCategory() {
-  if (!categoryNameEditingState.categoryKey) {
-    return
-  }
-
-  const draftIndex = Number.parseInt(String(categoryNameEditingState.categoryKey).replace('draft-category-', ''), 10)
-  if (Number.isInteger(draftIndex)) {
-    const draftCategory = tagCategoryDrafts.value[draftIndex]
-    if (draftCategory && !draftCategory.id && !draftCategory.name && (draftCategory.tags || []).length === 0) {
-      tagCategoryDrafts.value = tagCategoryDrafts.value.filter((_item, index) => index !== draftIndex)
-    }
-  }
-
-  categoryNameEditingState.categoryKey = ''
-  categoryNameEditingState.value = ''
-}
-
-function saveTagCategory(category) {
-  emit('save-tag-category', {
-    id: category.id || undefined,
-    name: categoryNameEditingState.categoryKey === category.categoryKey
-      ? categoryNameEditingState.value
-      : category.name
-  })
-  cancelRenameCategory()
-}
-
-function removeTagCategory(category) {
-  emit('remove-tag-category', {
-    id: category.id
-  })
-}
-
-function isDefaultTagCategory(categoryId = '') {
-  return DEFAULT_TAG_CATEGORY_IDS.has(String(categoryId || ''))
-}
-
-function startCreateTag(category) {
-  tagCreatorState.categoryKey = category.categoryKey
-  tagCreatorState.value = ''
-}
-
-function cancelCreateTag() {
-  tagCreatorState.categoryKey = ''
-  tagCreatorState.value = ''
-}
-
-function saveTag(category) {
-  emit('save-tag', {
-    categoryId: category.id,
-    name: tagCreatorState.value
-  })
-  cancelCreateTag()
-}
-
-function removeTag(categoryId, tagId) {
-  emit('remove-tag', {
-    categoryId,
-    tagId
-  })
-}
 </script>
 
 <template>
@@ -342,7 +238,7 @@ function removeTag(categoryId, tagId) {
     <header class="section-header">
       <div>
         <h2>提示词库</h2>
-        <p class="section-copy">管理系统提示词、自定义提示词、标签库和风险提示。</p>
+        <p class="section-copy">管理系统提示词、反向提示词与风险提示。</p>
       </div>
     </header>
 
@@ -441,85 +337,23 @@ function removeTag(categoryId, tagId) {
           </div>
         </article>
 
-        <article class="prompt-library-column prompt-library-column--tags">
+        <article class="prompt-library-column prompt-library-column--format">
           <div class="prompt-library-column__header prompt-library-column__header--stacked">
             <div>
-              <h3>分类标签</h3>
-              <p class="prompt-library-column__eyebrow">标签库</p>
+              <h3>提示词格式</h3>
+              <p class="prompt-library-column__eyebrow">按常见场景快速判断字数与写法重点</p>
             </div>
-            <button class="secondary-action secondary-action--compact" type="button" @click="createTagCategory">增加分类</button>
           </div>
 
           <div class="prompt-library-column__body scrollbar-hidden prompt-library-column__body--full">
-            <div class="prompt-tag-category-grid">
-              <section
-                v-for="category in tagCategoryBlocks"
-                :key="category.categoryKey"
-                class="prompt-tag-category-card"
-              >
-                <div class="prompt-tag-category-card__header">
-                  <div v-if="categoryNameEditingState.categoryKey === category.categoryKey" class="prompt-tag-category-card__title-edit">
-                    <input
-                      v-model="categoryNameEditingState.value"
-                      type="text"
-                      placeholder="输入分类名称"
-                    />
-                    <button class="secondary-action secondary-action--compact" type="button" @click="saveTagCategory(category)">保存分类</button>
-                    <button class="secondary-action secondary-action--compact" type="button" @click="cancelRenameCategory">取消</button>
-                  </div>
-                  <template v-else>
-                    <strong>{{ category.name || '未命名分类' }}</strong>
-                    <div class="prompt-tag-category-card__actions">
-                      <button class="secondary-action secondary-action--compact" type="button" @click="startRenameCategory(category)">编辑分类</button>
-                      <button
-                        v-if="!isDefaultTagCategory(category.id)"
-                        class="secondary-action secondary-action--compact"
-                        type="button"
-                        :disabled="!category.id"
-                        :title="isDefaultTagCategory(category.id) ? '默认标签分类不可删除' : ''"
-                        @click="removeTagCategory(category)"
-                      >
-                        删除分类
-                      </button>
-                    </div>
-                  </template>
-                </div>
-
-                <div class="prompt-tag-chip-list">
-                  <article
-                    v-for="tag in category.tags"
-                    :key="tag.id || `${category.categoryKey}-${tag.name}`"
-                    class="prompt-tag-chip"
-                    title="半透明绿色"
-                  >
-                    <span>{{ tag.name }}</span>
-                    <button class="prompt-tag-chip__remove" type="button" aria-label="删除标签" @click="removeTag(category.id, tag.id)">×</button>
-                  </article>
-
-                  <div
-                    v-if="tagCreatorState.categoryKey === category.categoryKey"
-                    class="prompt-tag-chip prompt-tag-chip--creator"
-                  >
-                    <input
-                      v-model="tagCreatorState.value"
-                      type="text"
-                      placeholder="输入标签"
-                    />
-                    <button class="secondary-action secondary-action--compact" type="button" :disabled="!category.id" @click="saveTag(category)">保存</button>
-                    <button class="secondary-action secondary-action--compact" type="button" @click="cancelCreateTag">取消</button>
-                  </div>
-
-                  <button
-                    v-else
-                    class="prompt-tag-chip prompt-tag-chip--new"
-                    type="button"
-                    :disabled="!category.id"
-                    @click="startCreateTag(category)"
-                  >
-                    新建标签
-                  </button>
-                </div>
-              </section>
+            <div class="prompt-format-list">
+              <article v-for="item in promptFormatGuide" :key="item.scene" class="prompt-format-card">
+                <strong>{{ item.scene }}</strong>
+                <span>推荐字符数</span>
+                <p>{{ item.length }}</p>
+                <span>写法要点</span>
+                <p>{{ item.tip }}</p>
+              </article>
             </div>
           </div>
         </article>

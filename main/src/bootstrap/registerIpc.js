@@ -4,7 +4,6 @@ const registerDrawIpc = require('../ipc/drawIpc')
 const registerLicenseIpc = require('../ipc/licenseIpc')
 const registerPromptIpc = require('../ipc/promptIpc')
 const registerNegativePromptTemplateIpc = require('../ipc/negativePromptTemplateIpc')
-const registerPromptTagIpc = require('../ipc/promptTagIpc')
 const registerTaskIpc = require('../ipc/taskIpc')
 const registerStudioIpc = require('../ipc/studioIpc')
 const { createDeviceFingerprintService } = require('../services/deviceFingerprintService')
@@ -14,7 +13,6 @@ const { createActivationGuardService } = require('../services/activationGuardSer
 const { createSettingsStoreService } = require('../services/settingsStoreService')
 const { createPromptTemplateStoreService } = require('../services/promptTemplateStoreService')
 const { createNegativePromptTemplateStoreService } = require('../services/negativePromptTemplateStoreService')
-const { createPromptTagStoreService } = require('../services/promptTagStoreService')
 const { createLocalTaskStoreService } = require('../services/localTaskStoreService')
 const { createStudioWorkspaceService } = require('../services/studioWorkspaceService')
 const { createStudioTaskManagerService } = require('../services/studioTaskManagerService')
@@ -47,7 +45,6 @@ function registerIpc () {
   })
   const promptTemplateService = createPromptTemplateStoreService({ store: promptStore })
   const negativePromptTemplateService = createNegativePromptTemplateStoreService({ store: negativePromptStore })
-  const promptTagService = createPromptTagStoreService({ store: promptStore })
   const localTaskStoreService = createLocalTaskStoreService({ store: taskStore })
   const studioTaskManagerService = createStudioTaskManagerService()
   const studioWorkspaceService = createStudioWorkspaceService({
@@ -74,7 +71,6 @@ function registerIpc () {
   })
   registerPromptIpc({ promptTemplateService })
   registerNegativePromptTemplateIpc({ negativePromptTemplateService })
-  registerPromptTagIpc({ promptTagService })
   registerTaskIpc({
     settingsService,
     promptTemplateService,

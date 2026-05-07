@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed } from 'vue'
 import { applyTemplateSelectionToAssignment } from '../utils/assignmentTemplateUpdate.js'
 
 const props = defineProps({
@@ -32,10 +32,6 @@ const props = defineProps({
     default: () => ({})
   },
   promptTemplates: {
-    type: Array,
-    default: () => []
-  },
-  promptTagCategories: {
     type: Array,
     default: () => []
   },
@@ -84,20 +80,6 @@ const seriesGeneratePromptAssignments = computed(() => {
   return Array.isArray(props.draftForm.promptAssignments) ? props.draftForm.promptAssignments : []
 })
 
-const selectedGlobalTagIds = computed(() => {
-  return Array.isArray(props.draftForm.selectedGlobalTagIds) ? props.draftForm.selectedGlobalTagIds : []
-})
-
-const selectedGlobalTags = computed(() => {
-  const tagMap = new Map((props.promptTagCategories || []).flatMap((category) => {
-    return (category.tags || []).map((tag) => [tag.id, tag])
-  }))
-
-  return selectedGlobalTagIds.value
-    .map((tagId) => tagMap.get(tagId))
-    .filter(Boolean)
-})
-
 const promptTemplateOptions = computed(() => {
   return Array.isArray(props.promptTemplates) ? props.promptTemplates : []
 })
@@ -112,10 +94,6 @@ const negativePromptTemplateOptions = computed(() => {
 const uploadIconUrl = new URL('../../../icon/shangchuan.png', import.meta.url).href
 const saveDirectoryIconUrl = new URL('../../../icon/baocun.png', import.meta.url).href
 const promptTemplateIconUrl = new URL('../../../icon/moban.png', import.meta.url).href
-const tagPickerVisibility = reactive({
-  'series-design': false,
-  'series-generate': false
-})
 
 const submitButtonLabel = computed(() => {
   if (props.submitButtonState === 'submitting') {
@@ -288,34 +266,6 @@ function handleTemplateSelection(targetKind, index, templateId) {
     updateSeriesGenerateAssignment(index, 'imageType', template.name)
     updateSeriesGenerateAssignment(index, 'prompt', template.prompt || '')
   }
-}
-
-function appendGlobalTag(tagId) {
-  if (!tagId || selectedGlobalTagIds.value.includes(tagId)) {
-    return
-  }
-
-  emitField('selectedGlobalTagIds', [...selectedGlobalTagIds.value, tagId])
-}
-
-function removeGlobalTag(tagId) {
-  emitField('selectedGlobalTagIds', selectedGlobalTagIds.value.filter((item) => item !== tagId))
-}
-
-function clearSelectedGlobalTags() {
-  emitField('selectedGlobalTagIds', [])
-}
-
-function toggleTagPicker(menuKey) {
-  if (!Object.prototype.hasOwnProperty.call(tagPickerVisibility, menuKey)) {
-    return
-  }
-
-  tagPickerVisibility[menuKey] = !tagPickerVisibility[menuKey]
-}
-
-function isTagPickerVisible(menuKey) {
-  return tagPickerVisibility[menuKey] === true
 }
 </script>
 
@@ -514,49 +464,15 @@ function isTagPickerVisible(menuKey) {
           </div>
         </section>
 
-        <section class="form-field prompt-tag-builder">
-          <div class="prompt-tag-builder__header">
-            <span>全局主提示词</span>
-            <div class="prompt-tag-builder__actions">
-              <button class="secondary-action secondary-action--compact" type="button" @click="toggleTagPicker('series-design')">
-                添加标签
-              </button>
-              <button class="secondary-action secondary-action--compact" type="button" @click="clearSelectedGlobalTags">清空标签</button>
-            </div>
-          </div>
-          <div class="selected-tag-list">
-            <strong>已选标签</strong>
-            <div class="selected-tag-chip-list">
-              <button
-                v-for="tag in selectedGlobalTags"
-                :key="tag.id"
-                class="prompt-tag-chip prompt-tag-chip--selected"
-                type="button"
-                @click="removeGlobalTag(tag.id)"
-              >
-                <span>{{ tag.name }}</span>
-              </button>
-            </div>
-          </div>
-          <div v-if="isTagPickerVisible('series-design')" class="prompt-tag-picker">
-            <div class="prompt-library-list">
-              <section v-for="category in promptTagCategories" :key="category.id" class="prompt-tag-picker__group">
-                <strong>{{ category.name }}</strong>
-                <div class="prompt-tag-picker__chips">
-                  <button
-                    v-for="tag in category.tags || []"
-                    :key="tag.id"
-                    class="prompt-tag-chip prompt-tag-chip--picker"
-                    type="button"
-                    @click="appendGlobalTag(tag.id)"
-                  >
-                    <span>{{ tag.name }}</span>
-                  </button>
-                </div>
-              </section>
-            </div>
-          </div>
-        </section>
+        <label class="form-field">
+          <span>全局主提示词</span>
+          <textarea
+            :value="draftForm.globalPrompt || ''"
+            rows="4"
+            placeholder="输入当前整套图片共用的全局主提示词"
+            @input="emitField('globalPrompt', $event.target.value)"
+          ></textarea>
+        </label>
 
         <label class="form-field">
           <span>模型选择</span>
@@ -746,49 +662,15 @@ function isTagPickerVisible(menuKey) {
           </article>
         </section>
 
-        <section class="form-field prompt-tag-builder">
-          <div class="prompt-tag-builder__header">
-            <span>全局风格提示词</span>
-            <div class="prompt-tag-builder__actions">
-              <button class="secondary-action secondary-action--compact" type="button" @click="toggleTagPicker('series-generate')">
-                添加标签
-              </button>
-              <button class="secondary-action secondary-action--compact" type="button" @click="clearSelectedGlobalTags">清空标签</button>
-            </div>
-          </div>
-          <div class="selected-tag-list">
-            <strong>已选标签</strong>
-            <div class="selected-tag-chip-list">
-              <button
-                v-for="tag in selectedGlobalTags"
-                :key="tag.id"
-                class="prompt-tag-chip prompt-tag-chip--selected"
-                type="button"
-                @click="removeGlobalTag(tag.id)"
-              >
-                <span>{{ tag.name }}</span>
-              </button>
-            </div>
-          </div>
-          <div v-if="isTagPickerVisible('series-generate')" class="prompt-tag-picker">
-            <div class="prompt-library-list">
-              <section v-for="category in promptTagCategories" :key="category.id" class="prompt-tag-picker__group">
-                <strong>{{ category.name }}</strong>
-                <div class="prompt-tag-picker__chips">
-                  <button
-                    v-for="tag in category.tags || []"
-                    :key="tag.id"
-                    class="prompt-tag-chip prompt-tag-chip--picker"
-                    type="button"
-                    @click="appendGlobalTag(tag.id)"
-                  >
-                    <span>{{ tag.name }}</span>
-                  </button>
-                </div>
-              </section>
-            </div>
-          </div>
-        </section>
+        <label class="form-field">
+          <span>全局风格提示词</span>
+          <textarea
+            :value="draftForm.globalPrompt || ''"
+            rows="4"
+            placeholder="输入当前批次共用的全局风格提示词"
+            @input="emitField('globalPrompt', $event.target.value)"
+          ></textarea>
+        </label>
 
         <label class="form-field">
           <span>模型选择</span>
