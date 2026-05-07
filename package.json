@@ -1,7 +1,7 @@
 {
   "name": "qiuai",
   "productName": "QiuAi",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Desktop image generation tool for gpt-image-2.",
   "author": {
