@@ -768,6 +768,11 @@ function estimateTaskCredits(menuKey, draft = {}) {
 
 function buildCreditOverview(settings = {}) {
   const creditState = normalizeCreditStateForDisplay(settings.creditState)
+  const dashboardCreditState = settings.dashboardCreditState && typeof settings.dashboardCreditState === 'object'
+    ? settings.dashboardCreditState
+    : {}
+  const remainingCredits = Math.max(0, Number(dashboardCreditState.remainingCredits) || 0)
+  const totalCredits = Math.max(0, Number(dashboardCreditState.totalCredits) || 0)
   const baseModelCreditCost = resolveModelCreditCost('gpt-image-2') || 600
   const latestAdjustmentLabel = creditState.lastAdjustmentAt
     ? `${creditState.lastAdjustmentOperation === 'decrease' ? '扣减' : '增加'} ${creditState.lastAdjustmentAmount}`
@@ -776,12 +781,12 @@ function buildCreditOverview(settings = {}) {
   return {
     title: '积分仪表盘',
     items: [
-      { label: '剩余积分', value: String(creditState.remainingCredits) },
+      { label: '剩余积分', value: String(remainingCredits) },
+      { label: '总积分', value: String(totalCredits) },
       { label: '冻结积分', value: String(creditState.frozenCredits) },
       { label: '已用积分', value: String(creditState.usedCredits) },
-      { label: '累计充值积分', value: String(creditState.totalPurchasedCredits) },
       { label: '最近调整', value: latestAdjustmentLabel },
-      { label: '按 gpt-image-2 约可生成', value: String(Math.floor(creditState.remainingCredits / baseModelCreditCost)) }
+      { label: '按 gpt-image-2 约可生成', value: String(Math.floor(remainingCredits / baseModelCreditCost)) }
     ]
   }
 }
@@ -838,7 +843,8 @@ function buildCreditMessages(settings = {}) {
   const creditState = normalizeCreditStateForDisplay(settings.creditState)
 
   return {
-    title: '积分消息记录',
+    title: '本地任务积分记录',
+    helperText: '（本栏为本地模拟记账，真实数据以仪表盘为准）',
     items: creditState.activityHistory.map((item) => ({
       ...item,
       label: resolveCreditActivityLabel(item),
@@ -934,6 +940,15 @@ function buildSettingsSummary(settings = {}) {
   return {
     apiKeys: Array.isArray(settings.apiKeys) ? settings.apiKeys.slice(0, 2) : ['', ''],
     activeApiKeyIndex: Number.isInteger(settings.activeApiKeyIndex) ? settings.activeApiKeyIndex : 0,
+    dashboardCreditState: settings.dashboardCreditState && typeof settings.dashboardCreditState === 'object'
+      ? {
+          totalCredits: Math.max(0, Number(settings.dashboardCreditState.totalCredits) || 0),
+          remainingCredits: Math.max(0, Number(settings.dashboardCreditState.remainingCredits) || 0)
+        }
+      : {
+          totalCredits: 0,
+          remainingCredits: 0
+        },
     creditState: normalizeCreditStateForDisplay(settings.creditState)
   }
 }
@@ -1844,6 +1859,7 @@ function refundCreditsForTask({ creditState, taskId, updatedAt }) {
 function createStudioWorkspaceService({
   store,
   settingsService,
+  apiKeyCreditService,
   promptTemplateService,
   messageRecorder,
   runtimeLogger,
@@ -1892,6 +1908,25 @@ function createStudioWorkspaceService({
   let cachedExportItemsByMenu = null
   let cachedExportItemsAt = 0
   let isExportItemsCacheDirty = true
+
+  function buildBaseSnapshot() {
+    const state = getStoredState()
+    const settings = settingsService.getSettings()
+    const tasks = getStoredTasks(state)
+    const exportItemsByMenu = getResolvedExportItemsByMenu(state)
+    const derivedState = {
+      ...state,
+      exportItemsByMenu
+    }
+
+    return {
+      state,
+      settings,
+      tasks,
+      exportItemsByMenu,
+      derivedState
+    }
+  }
 
   function createTaskExecutionController(taskId) {
     let stopped = false
@@ -2396,14 +2431,81 @@ function createStudioWorkspaceService({
   }
 
   function getSnapshot() {
-    const state = getStoredState()
-    const settings = settingsService.getSettings()
-    const tasks = getStoredTasks(state)
-    const exportItemsByMenu = getResolvedExportItemsByMenu(state)
-    const derivedState = {
-      ...state,
-      exportItemsByMenu
+    const {
+      state,
+      settings,
+      tasks,
+      exportItemsByMenu,
+      derivedState
+    } = buildBaseSnapshot()
+
+    return {
+      themeMode: settings.themeMode || 'dark',
+      themeOptions,
+      menuItems,
+      batchOptions,
+      imageModelOptions,
+      modelPricingCatalog,
+      formDrafts: state.formDrafts,
+      resultsByMenu: hydrateResultsByMenuForDisplay(state.resultsByMenu),
+      exportItemsByMenu,
+      tasks,
+      workspaceDashboard: buildWorkspaceDashboard(derivedState, tasks, settings),
+      settingsSummary: buildSettingsSummary(settings),
+      hostInfo: buildHostInfo()
     }
+  }
+
+  async function refreshDashboardCredits({
+    target = 'remaining'
+  } = {}) {
+    const settings = settingsService.getSettings()
+    const currentDashboardCreditState = settings.dashboardCreditState && typeof settings.dashboardCreditState === 'object'
+      ? settings.dashboardCreditState
+      : { totalCredits: 0, remainingCredits: 0 }
+    const realtimeCredits = apiKeyCreditService && typeof apiKeyCreditService.getRealtimeCredits === 'function'
+      ? await apiKeyCreditService.getRealtimeCredits()
+      : null
+
+    if (!realtimeCredits || !Number.isFinite(Number(realtimeCredits.remainingCredits))) {
+      return {
+        totalCredits: Math.max(0, Number(currentDashboardCreditState.totalCredits) || 0),
+        remainingCredits: Math.max(0, Number(currentDashboardCreditState.remainingCredits) || 0)
+      }
+    }
+
+    const fetchedCredits = Math.max(0, Math.round(Number(realtimeCredits.remainingCredits)))
+    const nextDashboardCreditState = target === 'total'
+      ? {
+          totalCredits: fetchedCredits,
+          remainingCredits: Math.min(
+            Math.max(0, Number(currentDashboardCreditState.remainingCredits) || 0),
+            fetchedCredits
+          )
+        }
+      : {
+          totalCredits: Math.max(0, Number(currentDashboardCreditState.totalCredits) || 0),
+          remainingCredits: fetchedCredits
+        }
+
+    await settingsService.saveSettings({
+      dashboardCreditState: nextDashboardCreditState
+    })
+
+    return nextDashboardCreditState
+  }
+
+  async function getDisplaySnapshot() {
+    await refreshDashboardCredits({
+      target: 'remaining'
+    })
+    const {
+      state,
+      settings,
+      tasks,
+      exportItemsByMenu,
+      derivedState
+    } = buildBaseSnapshot()
 
     return {
       themeMode: settings.themeMode || 'dark',
@@ -2690,6 +2792,8 @@ function createStudioWorkspaceService({
 
   return {
     getSnapshot,
+    getDisplaySnapshot,
+    refreshDashboardCredits,
     saveDraft,
     createTask,
     stopTask,

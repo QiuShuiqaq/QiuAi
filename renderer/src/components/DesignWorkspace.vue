@@ -86,19 +86,11 @@ defineProps({
     type: Object,
     required: true
   },
-  creditAdjustmentValue: {
-    type: String,
-    required: true
-  },
-  totalCreditsValue: {
-    type: String,
-    required: true
-  },
-  isApplyingCreditAdjustment: {
+  isRefreshingTotalCredits: {
     type: Boolean,
     required: true
   },
-  isSavingTotalCredits: {
+  isRefreshingRemainingCredits: {
     type: Boolean,
     required: true
   },
@@ -148,10 +140,8 @@ const emit = defineEmits([
   'select-series-design-images',
   'select-series-generate-image',
   'open-output-directory',
-  'update-credit-adjustment',
-  'apply-credit-adjustment',
-  'update-total-credits',
-  'save-total-credits',
+  'refresh-total-credits',
+  'refresh-remaining-credits',
   'save-prompt-template',
   'remove-prompt-template',
   'save-negative-prompt-template',
@@ -183,14 +173,10 @@ const emit = defineEmits([
         <WorkspaceDashboard
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
-          :credit-adjustment-value="creditAdjustmentValue"
-          :total-credits-value="totalCreditsValue"
-          :is-applying-credit-adjustment="isApplyingCreditAdjustment"
-          :is-saving-total-credits="isSavingTotalCredits"
-          @update-credit-adjustment="emit('update-credit-adjustment', $event)"
-          @apply-credit-adjustment="emit('apply-credit-adjustment', $event)"
-          @update-total-credits="emit('update-total-credits', $event)"
-          @save-total-credits="emit('save-total-credits')"
+          :is-refreshing-total-credits="isRefreshingTotalCredits"
+          :is-refreshing-remaining-credits="isRefreshingRemainingCredits"
+          @refresh-total-credits="emit('refresh-total-credits')"
+          @refresh-remaining-credits="emit('refresh-remaining-credits')"
         />
       </section>
     </template>

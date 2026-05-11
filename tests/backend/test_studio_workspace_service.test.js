@@ -1759,8 +1759,10 @@ describe('studioWorkspaceService', () => {
       'task_freeze'
     ])
     expect(snapshot.workspaceDashboard.creditOverview.title).toBe('积分仪表盘')
-    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('4400')
-    expect(snapshot.workspaceDashboard.creditMessages.title).toBe('积分消息记录')
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('0')
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '总积分')?.value).toBe('0')
+    expect(snapshot.workspaceDashboard.creditMessages.title).toBe('本地任务积分记录')
+    expect(snapshot.workspaceDashboard.creditMessages.helperText).toBe('（本栏为本地模拟记账，真实数据以仪表盘为准）')
     expect(snapshot.workspaceDashboard.creditMessages.items[0]).toMatchObject({
       type: 'task_settle',
       taskNumber: 'QAI-20260429-0001'
@@ -1961,5 +1963,204 @@ describe('studioWorkspaceService', () => {
     })
 
     releaseRunningTask()
+  })
+
+  it('uses realtime api key credits in the dashboard when the main-process query succeeds', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveAdminApiKey({
+      apiKey: 'sk-realtime-balance',
+      password: 'qiuai@123'
+    })
+    await settingsService.saveSettings({
+      creditState: {
+        totalPurchasedCredits: 8000,
+        remainingCredits: 3200,
+        frozenCredits: 400,
+        usedCredits: 600
+      }
+    })
+
+    const apiKeyCreditService = {
+      getRealtimeCredits: vi.fn().mockResolvedValue({
+        remainingCredits: 16888,
+        lastSyncedAt: '2026-05-11T08:00:00.000Z',
+        syncStatus: 'success'
+      })
+    }
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      apiKeyCreditService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    const snapshot = await service.getDisplaySnapshot()
+
+    expect(apiKeyCreditService.getRealtimeCredits).toHaveBeenCalledTimes(1)
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('16888')
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '冻结积分')?.value).toBe('400')
+    expect(snapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '总积分')?.value).toBe('0')
+    expect(snapshot.settingsSummary.creditState.remainingCredits).toBe(3200)
+  })
+
+  it('keeps the last successful realtime credits when a later query fails', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveAdminApiKey({
+      apiKey: 'sk-realtime-balance',
+      password: 'qiuai@123'
+    })
+    await settingsService.saveSettings({
+      creditState: {
+        totalPurchasedCredits: 8000,
+        remainingCredits: 3200,
+        frozenCredits: 0,
+        usedCredits: 600
+      }
+    })
+
+    const apiKeyCreditService = {
+      getRealtimeCredits: vi.fn()
+        .mockResolvedValueOnce({
+          remainingCredits: 9527,
+          lastSyncedAt: '2026-05-11T08:00:00.000Z',
+          syncStatus: 'success'
+        })
+        .mockResolvedValueOnce({
+          remainingCredits: 9527,
+          lastSyncedAt: '2026-05-11T08:00:00.000Z',
+          syncStatus: 'stale'
+        })
+    }
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      apiKeyCreditService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    const firstSnapshot = await service.getDisplaySnapshot()
+    const secondSnapshot = await service.getDisplaySnapshot()
+
+    expect(firstSnapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('9527')
+    expect(secondSnapshot.workspaceDashboard.creditOverview.items.find((item) => item.label === '剩余积分')?.value).toBe('9527')
+    expect(apiKeyCreditService.getRealtimeCredits).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes dashboard total credits from the realtime balance and clamps remaining credits when needed', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveAdminApiKey({
+      apiKey: 'sk-realtime-total',
+      password: 'qiuai@123'
+    })
+    await settingsService.saveSettings({
+      dashboardCreditState: {
+        totalCredits: 9000,
+        remainingCredits: 7000
+      }
+    })
+
+    const apiKeyCreditService = {
+      getRealtimeCredits: vi.fn().mockResolvedValue({
+        remainingCredits: 4800,
+        lastSyncedAt: '2026-05-11T09:00:00.000Z',
+        syncStatus: 'success'
+      })
+    }
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      apiKeyCreditService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    const refreshResult = await service.refreshDashboardCredits({
+      target: 'total'
+    })
+
+    expect(refreshResult).toMatchObject({
+      totalCredits: 4800,
+      remainingCredits: 4800
+    })
+    expect(settingsService.getSettings().dashboardCreditState).toMatchObject({
+      totalCredits: 4800,
+      remainingCredits: 4800
+    })
+  })
+
+  it('refreshes dashboard remaining credits from the realtime balance without changing total credits', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await settingsService.saveAdminApiKey({
+      apiKey: 'sk-realtime-remaining',
+      password: 'qiuai@123'
+    })
+    await settingsService.saveSettings({
+      dashboardCreditState: {
+        totalCredits: 12000,
+        remainingCredits: 9000
+      }
+    })
+
+    const apiKeyCreditService = {
+      getRealtimeCredits: vi.fn().mockResolvedValue({
+        remainingCredits: 8200,
+        lastSyncedAt: '2026-05-11T09:10:00.000Z',
+        syncStatus: 'success'
+      })
+    }
+
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      apiKeyCreditService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined
+    })
+
+    const refreshResult = await service.refreshDashboardCredits({
+      target: 'remaining'
+    })
+
+    expect(refreshResult).toMatchObject({
+      totalCredits: 12000,
+      remainingCredits: 8200
+    })
+    expect(settingsService.getSettings().dashboardCreditState).toMatchObject({
+      totalCredits: 12000,
+      remainingCredits: 8200
+    })
   })
 })

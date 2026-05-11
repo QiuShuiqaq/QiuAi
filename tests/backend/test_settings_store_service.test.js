@@ -334,11 +334,43 @@ describe('settingsStoreService', () => {
         'series-design': '',
         'series-generate': ''
       },
+      dashboardCreditState: {
+        totalCredits: 0,
+        remainingCredits: 0
+      },
       creditState: {
         totalPurchasedCredits: 1000,
         remainingCredits: 400
       }
     })
+  })
+
+  it('normalizes and saves dashboard credit state independently from the local ledger', async () => {
+    const memory = new Map()
+    const store = {
+      get (key, fallbackValue) {
+        return memory.has(key) ? memory.get(key) : fallbackValue
+      },
+      set (key, value) {
+        memory.set(key, value)
+      }
+    }
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const service = createSettingsStoreService({ store })
+
+    await service.saveSettings({
+      dashboardCreditState: {
+        totalCredits: 8888,
+        remainingCredits: 6666
+      }
+    })
+
+    expect(service.getSettings().dashboardCreditState).toMatchObject({
+      totalCredits: 8888,
+      remainingCredits: 6666
+    })
+    expect(service.getSettings().creditState.remainingCredits).toBe(0)
   })
 
   it('updates only the provided upload directory keys without clearing sibling directories', async () => {

@@ -22,8 +22,12 @@ function resolveUploadDefaultPath (settingsService, menuKey = '') {
 }
 
 function registerStudioIpc({ studioWorkspaceService, settingsService, dataTraceService, activationGuard }) {
-  ipcMain.handle(ipcChannels.STUDIO_GET_SNAPSHOT, () => {
-    return studioWorkspaceService.getSnapshot()
+  ipcMain.handle(ipcChannels.STUDIO_GET_SNAPSHOT, async () => {
+    return studioWorkspaceService.getDisplaySnapshot()
+  })
+
+  ipcMain.handle(ipcChannels.STUDIO_REFRESH_DASHBOARD_CREDITS, async (_event, payload = {}) => {
+    return studioWorkspaceService.refreshDashboardCredits(payload)
   })
 
   ipcMain.handle(ipcChannels.STUDIO_SAVE_DRAFT, async (_event, payload = {}) => {

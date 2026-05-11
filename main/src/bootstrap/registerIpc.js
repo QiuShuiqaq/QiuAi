@@ -11,6 +11,7 @@ const { createLicenseService } = require('../services/licenseService')
 const { LICENSE_PUBLIC_KEY } = require('../services/licensePublicKey')
 const { createActivationGuardService } = require('../services/activationGuardService')
 const { createSettingsStoreService } = require('../services/settingsStoreService')
+const { createApiKeyCreditService } = require('../services/apiKeyCreditService')
 const { createPromptTemplateStoreService } = require('../services/promptTemplateStoreService')
 const { createNegativePromptTemplateStoreService } = require('../services/negativePromptTemplateStoreService')
 const { createLocalTaskStoreService } = require('../services/localTaskStoreService')
@@ -36,6 +37,11 @@ function registerIpc () {
   })
   const deviceFingerprintService = createDeviceFingerprintService()
   const settingsService = createSettingsStoreService({ store: settingsStore })
+  const apiKeyCreditService = createApiKeyCreditService({
+    settingsService,
+    messageRecorder: dataTraceService,
+    requestMetricRecorder: async () => {}
+  })
   const licenseService = createLicenseService({
     publicKey: LICENSE_PUBLIC_KEY,
     getDeviceCode: () => deviceFingerprintService.getDeviceCode()
@@ -50,6 +56,7 @@ function registerIpc () {
   const studioWorkspaceService = createStudioWorkspaceService({
     store: studioStore,
     settingsService,
+    apiKeyCreditService,
     promptTemplateService,
     messageRecorder: dataTraceService,
     runtimeLogger: dataTraceService,

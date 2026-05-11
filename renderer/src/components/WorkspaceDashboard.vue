@@ -1,6 +1,5 @@
 <script setup>
 import { computed } from 'vue'
-import FormTextControl from './FormTextControl.vue'
 
 const props = defineProps({
   workspaceDashboard: {
@@ -11,29 +10,19 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  creditAdjustmentValue: {
-    type: String,
-    required: true
-  },
-  totalCreditsValue: {
-    type: String,
-    required: true
-  },
-  isApplyingCreditAdjustment: {
+  isRefreshingTotalCredits: {
     type: Boolean,
     required: true
   },
-  isSavingTotalCredits: {
+  isRefreshingRemainingCredits: {
     type: Boolean,
     required: true
   }
 })
 
 const emit = defineEmits([
-  'update-credit-adjustment',
-  'apply-credit-adjustment',
-  'update-total-credits',
-  'save-total-credits'
+  'refresh-total-credits',
+  'refresh-remaining-credits'
 ])
 
 // 固定工作台卡片标题：
@@ -129,7 +118,9 @@ const creditOverviewCard = computed(() => {
     title: '积分仪表盘',
     items: [
       { label: '剩余积分', value: '0' },
-      { label: '累计充值积分', value: '0' }
+      { label: '总积分', value: '0' },
+      { label: '冻结积分', value: '0' },
+      { label: '已用积分', value: '0' }
     ]
   }
 })
@@ -158,7 +149,8 @@ const creditGaugeGlow = computed(() => {
 
 const creditMessagesCard = computed(() => {
   return props.workspaceDashboard.creditMessages || {
-    title: '积分消息记录',
+    title: '本地任务积分记录',
+    helperText: '（本栏为本地模拟记账，真实数据以仪表盘为准）',
     items: []
   }
 })
@@ -174,43 +166,13 @@ const hostInfoItems = computed(() => {
   ]
 })
 
-function updateCreditAdjustmentValue(value) {
-  // 积分调整输入事件预留：后续可在这里扩展输入格式校验。
-  emit('update-credit-adjustment', value)
+function refreshTotalCredits() {
+  emit('refresh-total-credits')
 }
 
-function applyCreditAdjustment() {
-  // 积分应用事件预留：后续可在这里接入更细粒度的业务确认。
-  emit('apply-credit-adjustment')
+function refreshRemainingCredits() {
+  emit('refresh-remaining-credits')
 }
-
-function updateTotalCreditsValue(value) {
-  // 总积分输入事件预留：后续可在这里扩展输入格式校验。
-  emit('update-total-credits', value)
-}
-
-function saveTotalCredits() {
-  // 总积分保存事件预留：后续可在这里接入更细粒度的业务确认。
-  emit('save-total-credits')
-}
-
-const totalCreditsModel = computed({
-  get() {
-    return props.totalCreditsValue || ''
-  },
-  set(value) {
-    updateTotalCreditsValue(value)
-  }
-})
-
-const creditAdjustmentModel = computed({
-  get() {
-    return props.creditAdjustmentValue || ''
-  },
-  set(value) {
-    updateCreditAdjustmentValue(value)
-  }
-})
 </script>
 
 <template>
@@ -389,43 +351,24 @@ const creditAdjustmentModel = computed({
             <div class="dashboard-credit-adjust">
               <div class="dashboard-credit-adjust__grid">
                 <div class="dashboard-credit-adjust__action-group">
-                  <label class="form-field">
-                    <span>总积分</span>
-                    <FormTextControl
-                      v-model="totalCreditsModel"
-                      type="number"
-                      min="0"
-                      placeholder="输入总积分"
-                    />
-                  </label>
-
                   <button
-                    class="secondary-action secondary-action--compact credit-total-save"
+                    class="secondary-action secondary-action--compact refresh-total-credits"
                     type="button"
-                    :disabled="isSavingTotalCredits"
-                    @click="saveTotalCredits"
+                    :disabled="isRefreshingTotalCredits"
+                    @click="refreshTotalCredits"
                   >
-                    {{ isSavingTotalCredits ? '保存中' : '保存总积分' }}
+                    {{ isRefreshingTotalCredits ? '更新中...' : '更新总积分' }}
                   </button>
                 </div>
 
                 <div class="dashboard-credit-adjust__action-group">
-                  <label class="form-field">
-                    <span>调整积分</span>
-                    <FormTextControl
-                      v-model="creditAdjustmentModel"
-                      type="number"
-                      placeholder="输入正数增加，负数扣减"
-                    />
-                  </label>
-
                   <button
-                    class="secondary-action secondary-action--compact credit-adjustment-apply"
+                    class="secondary-action secondary-action--compact refresh-remaining-credits"
                     type="button"
-                    :disabled="isApplyingCreditAdjustment"
-                    @click="applyCreditAdjustment"
+                    :disabled="isRefreshingRemainingCredits"
+                    @click="refreshRemainingCredits"
                   >
-                    {{ isApplyingCreditAdjustment ? '处理中...' : '应用调整' }}
+                    {{ isRefreshingRemainingCredits ? '更新中...' : '更新剩余积分' }}
                   </button>
                 </div>
               </div>
@@ -439,6 +382,7 @@ const creditAdjustmentModel = computed({
           <header class="dashboard-card__header">
             <div>
               <h2>{{ creditMessagesCard.title }}</h2>
+              <p class="section-copy">{{ creditMessagesCard.helperText }}</p>
             </div>
           </header>
 

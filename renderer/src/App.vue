@@ -14,6 +14,7 @@ import {
   exportStudioResults,
   getActivationStatus,
   getSettings,
+  refreshDashboardCredits,
   getStudioSnapshot,
   importLicenseFile,
   listPromptTemplates,
@@ -104,7 +105,6 @@ const ratioOptions = [
 
 const activeTheme = ref('dark')
 const activeMenu = ref('workspace')
-const isApplyingCreditAdjustment = ref(false)
 const downloadCleanupEnabled = ref(true)
 const selectedExportIds = ref([])
 const selectedExportIdsByMenu = ref(createEmptyExportSelectionsByMenu())
@@ -124,12 +124,11 @@ const actionNotice = reactive({
   title: '',
   message: ''
 })
-const creditAdjustmentAmount = ref('')
-const totalCreditAmount = ref('')
 const uploadDirectoryDrafts = reactive(createEmptyUploadDirectoryDrafts())
 const activationState = ref(createDefaultActivationState())
 const isActivationLoading = ref(true)
-const isSavingTotalCredits = ref(false)
+const isRefreshingTotalCredits = ref(false)
+const isRefreshingRemainingCredits = ref(false)
 const adminLogoClickCount = ref(0)
 const isAdminPasswordDialogVisible = ref(false)
 const isAdminPasswordSubmitting = ref(false)
@@ -833,14 +832,6 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
     Object.assign(uploadDirectoryDrafts, nextUploadDirectories)
   }
 
-  if (!totalCreditAmount.value || isSavingTotalCredits.value) {
-    const snapshotCreditItems = Array.isArray(snapshot.workspaceDashboard?.creditOverview?.items)
-      ? snapshot.workspaceDashboard.creditOverview.items
-      : []
-    const totalCreditItem = snapshotCreditItems.find((item) => item.label === '总积分' || item.label === '累计充值积分')
-    const resolvedTotalCredits = settings.creditState?.totalPurchasedCredits ?? totalCreditItem?.value ?? 0
-    totalCreditAmount.value = String(resolvedTotalCredits)
-  }
 }
 
 async function loadStudioSnapshot(options = {}) {
@@ -1905,39 +1896,13 @@ async function handleStopTask(task) {
   }
 }
 
-function handleCreditAdjustmentValueUpdate(value) {
-  creditAdjustmentAmount.value = String(value ?? '')
-}
-
-function handleTotalCreditValueUpdate(value) {
-  totalCreditAmount.value = String(value ?? '')
-}
-
-async function handleApplyCreditAdjustment(operation) {
-  const parsedAmount = Number.parseInt(String(creditAdjustmentAmount.value || '').trim(), 10)
-
-  if (!Number.isFinite(parsedAmount) || parsedAmount === 0) {
-    showActionFeedback({
-      type: 'error',
-      title: '失败',
-      message: '积分调整失败：请输入非 0 的积分数值，正数增加，负数扣减'
-    })
-    return
-  }
-
-  const resolvedOperation = operation || (parsedAmount < 0 ? 'decrease' : 'increase')
-  const normalizedAmount = Math.abs(parsedAmount)
-
-  isApplyingCreditAdjustment.value = true
+async function handleRefreshDashboardTotalCredits() {
+  isRefreshingTotalCredits.value = true
 
   try {
-    await saveSettings({
-      creditAdjustment: {
-        operation: resolvedOperation,
-        amount: normalizedAmount
-      }
+    await refreshDashboardCredits({
+      target: 'total'
     })
-    creditAdjustmentAmount.value = ''
     await loadStudioSnapshot({
       preserveDrafts: true,
       preserveApiConfig: true,
@@ -1946,53 +1911,27 @@ async function handleApplyCreditAdjustment(operation) {
     showActionFeedback({
       type: 'success',
       title: '成功',
-      message: resolvedOperation === 'decrease' ? '积分已扣减' : '积分已增加'
+      message: '总积分已更新'
     })
   } catch (error) {
-    console.error('Failed to adjust credits', error)
+    console.error('Failed to refresh dashboard total credits', error)
     showActionFeedback({
       type: 'error',
       title: '失败',
-      message: `积分调整失败：${buildErrorMessage(error, '积分调整未完成')}`
+      message: `更新总积分失败：${buildErrorMessage(error, '已保留上次成功值')}`
     })
   } finally {
-    isApplyingCreditAdjustment.value = false
+    isRefreshingTotalCredits.value = false
   }
 }
 
-async function handleSaveTotalCredits() {
-  const normalizedTotalCredits = Number.parseInt(String(totalCreditAmount.value || '').trim(), 10)
-  const remainingCredits = Number.parseInt(String(
-    workspaceDashboard.value.creditOverview?.items?.find((item) => item.label === '剩余积分')?.value || '0'
-  ).replace(/[^\d]/g, ''), 10) || 0
-
-  if (!Number.isFinite(normalizedTotalCredits) || normalizedTotalCredits < 0) {
-    showActionFeedback({
-      type: 'error',
-      title: '失败',
-      message: '总积分保存失败：请输入大于等于 0 的积分数值'
-    })
-    return
-  }
-
-  if (normalizedTotalCredits < remainingCredits) {
-    showActionFeedback({
-      type: 'error',
-      title: '失败',
-      message: '总积分保存失败：总积分不能小于当前剩余积分'
-    })
-    return
-  }
-
-  isSavingTotalCredits.value = true
+async function handleRefreshDashboardRemainingCredits() {
+  isRefreshingRemainingCredits.value = true
 
   try {
-    await saveSettings({
-      creditState: {
-        totalPurchasedCredits: normalizedTotalCredits
-      }
+    await refreshDashboardCredits({
+      target: 'remaining'
     })
-    totalCreditAmount.value = String(normalizedTotalCredits)
     await loadStudioSnapshot({
       preserveDrafts: true,
       preserveApiConfig: true,
@@ -2001,17 +1940,17 @@ async function handleSaveTotalCredits() {
     showActionFeedback({
       type: 'success',
       title: '成功',
-      message: '总积分已保存'
+      message: '剩余积分已更新'
     })
   } catch (error) {
-    console.error('Failed to save total credits', error)
+    console.error('Failed to refresh dashboard remaining credits', error)
     showActionFeedback({
       type: 'error',
       title: '失败',
-      message: `总积分保存失败：${buildErrorMessage(error, '总积分保存未完成')}`
+      message: `更新剩余积分失败：${buildErrorMessage(error, '已保留上次成功值')}`
     })
   } finally {
-    isSavingTotalCredits.value = false
+    isRefreshingRemainingCredits.value = false
   }
 }
 
@@ -2203,10 +2142,8 @@ onBeforeUnmount(() => {
           :latest-task="latestTaskForActiveMenu"
           :workspace-dashboard="workspaceDashboard"
           :host-info="hostInfo"
-          :credit-adjustment-value="creditAdjustmentAmount"
-          :total-credits-value="totalCreditAmount"
-          :is-applying-credit-adjustment="isApplyingCreditAdjustment"
-          :is-saving-total-credits="isSavingTotalCredits"
+          :is-refreshing-total-credits="isRefreshingTotalCredits"
+          :is-refreshing-remaining-credits="isRefreshingRemainingCredits"
           :runtime-reset-sequence="runtimeResetSequence"
           :is-clear-runtime-confirm-visible="isClearRuntimeConfirmVisible"
           :is-clearing-runtime-state="isClearingRuntimeState"
@@ -2224,10 +2161,8 @@ onBeforeUnmount(() => {
           @select-series-design-images="handleOpenSeriesDesignPicker"
           @select-series-generate-image="handleOpenSeriesGeneratePicker"
           @open-output-directory="handleOpenOutputDirectory"
-          @update-credit-adjustment="handleCreditAdjustmentValueUpdate"
-          @apply-credit-adjustment="handleApplyCreditAdjustment"
-          @update-total-credits="handleTotalCreditValueUpdate"
-          @save-total-credits="handleSaveTotalCredits"
+          @refresh-total-credits="handleRefreshDashboardTotalCredits"
+          @refresh-remaining-credits="handleRefreshDashboardRemainingCredits"
           @save-prompt-template="handleSavePromptTemplate"
           @remove-prompt-template="handleRemovePromptTemplate"
           @save-negative-prompt-template="handleSaveNegativePromptTemplate"

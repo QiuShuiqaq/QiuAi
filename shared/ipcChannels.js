@@ -23,6 +23,7 @@ module.exports = {
   TASKS_GET: 'tasks:get',
   TASKS_EXPORT: 'tasks:export',
   STUDIO_GET_SNAPSHOT: 'studio:get-snapshot',
+  STUDIO_REFRESH_DASHBOARD_CREDITS: 'studio:refresh-dashboard-credits',
   STUDIO_SAVE_DRAFT: 'studio:save-draft',
   STUDIO_CREATE_TASK: 'studio:create-task',
   STUDIO_STOP_TASK: 'studio:stop-task',

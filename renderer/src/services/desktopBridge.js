@@ -17,6 +17,11 @@ const defaultBrowserCreditState = {
   taskLedger: {}
 }
 
+const defaultBrowserDashboardCreditState = {
+  totalCredits: 0,
+  remainingCredits: 0
+}
+
 const defaultBrowserSettings = {
   apiBaseUrl: 'https://grsai.dakka.com.cn',
   apiKeys: ['', ''],
@@ -33,6 +38,7 @@ const defaultBrowserSettings = {
   },
   themeMode: 'dark',
   downloadCleanupEnabled: true,
+  dashboardCreditState: defaultBrowserDashboardCreditState,
   creditState: defaultBrowserCreditState
 }
 
@@ -258,6 +264,15 @@ function normalizeBrowserCreditState (rawCreditState = {}) {
   }
 }
 
+function normalizeBrowserDashboardCreditState (rawDashboardCreditState = {}) {
+  const source = rawDashboardCreditState && typeof rawDashboardCreditState === 'object' ? rawDashboardCreditState : {}
+
+  return {
+    totalCredits: normalizeNonNegativeInteger(source.totalCredits),
+    remainingCredits: normalizeNonNegativeInteger(source.remainingCredits)
+  }
+}
+
 function applyBrowserCreditAdjustment (creditState, adjustment = {}) {
   const normalizedCreditState = normalizeBrowserCreditState(creditState)
   const amount = normalizeNonNegativeInteger(adjustment.amount)
@@ -314,6 +329,7 @@ function normalizeBrowserSettings (rawSettings = {}) {
     downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
+    dashboardCreditState: normalizeBrowserDashboardCreditState(mergedSettings.dashboardCreditState),
     creditState: normalizeBrowserCreditState(mergedSettings.creditState),
     apiKeys,
     activeApiKeyIndex,
@@ -694,6 +710,19 @@ export function getStudioSnapshot () {
   }
 
   return invoke(getChannel('STUDIO_GET_SNAPSHOT'))
+}
+
+export function refreshDashboardCredits (payload) {
+  if (!hasBridge()) {
+    const settings = getBrowserSettings()
+    const current = settings.dashboardCreditState || defaultBrowserDashboardCreditState
+    return Promise.resolve({
+      totalCredits: current.totalCredits,
+      remainingCredits: current.remainingCredits
+    })
+  }
+
+  return invoke(getChannel('STUDIO_REFRESH_DASHBOARD_CREDITS'), payload)
 }
 
 export function saveStudioDraft (payload) {

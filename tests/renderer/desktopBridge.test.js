@@ -259,6 +259,35 @@ describe('desktopBridge', () => {
     expect(loaded.creditState.remainingCredits).toBe(300)
   })
 
+  it('saves browser-side dashboard credit state independently when the desktop bridge is unavailable', async () => {
+    const storage = new Map()
+    window.localStorage = {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, value)
+      }
+    }
+
+    const { getSettings, saveSettings } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await saveSettings({
+      dashboardCreditState: {
+        totalCredits: 4096,
+        remainingCredits: 2048
+      }
+    })
+
+    const loaded = await getSettings()
+
+    expect(loaded.dashboardCreditState).toEqual({
+      totalCredits: 4096,
+      remainingCredits: 2048
+    })
+    expect(loaded.creditState.remainingCredits).toBe(0)
+  })
+
   it('keeps browser upload directories isolated per menu', async () => {
     const storage = new Map()
     window.localStorage = {
@@ -415,6 +444,58 @@ describe('desktopBridge', () => {
     await clearStudioRuntimeState()
 
     expect(invoke).toHaveBeenCalledWith('studio:clear-runtime-state', undefined)
+  })
+
+  it('invokes the dashboard credit refresh channel through the desktop bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue({ totalCredits: 3000, remainingCredits: 2800 })
+
+    window.qiuai = {
+      channels: {
+        STUDIO_REFRESH_DASHBOARD_CREDITS: 'studio:refresh-dashboard-credits'
+      },
+      invoke
+    }
+
+    const { refreshDashboardCredits } = await import('../../renderer/src/services/desktopBridge.js')
+
+    await refreshDashboardCredits({
+      target: 'total'
+    })
+
+    expect(invoke).toHaveBeenCalledWith('studio:refresh-dashboard-credits', {
+      target: 'total'
+    })
+  })
+
+  it('returns the browser snapshot directly when the electron bridge is unavailable', async () => {
+    const storage = new Map()
+    window.localStorage = {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null
+      },
+      setItem(key, value) {
+        storage.set(key, value)
+      }
+    }
+
+    storage.set('qiuai-browser-studio', JSON.stringify({
+      workspaceDashboard: {
+        creditOverview: {
+          title: '积分仪表盘',
+          items: [
+            { label: '剩余积分', value: '1234' }
+          ]
+        }
+      }
+    }))
+
+    const { getStudioSnapshot } = await import('../../renderer/src/services/desktopBridge.js')
+    const snapshot = await getStudioSnapshot()
+
+    expect(snapshot.workspaceDashboard.creditOverview.items[0]).toEqual({
+      label: '剩余积分',
+      value: '1234'
+    })
   })
 
   it('invokes activation status and license import through the desktop bridge', async () => {

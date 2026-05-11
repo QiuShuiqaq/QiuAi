@@ -18,6 +18,11 @@ const defaultCreditState = {
   taskLedger: {}
 }
 
+const defaultDashboardCreditState = {
+  totalCredits: 0,
+  remainingCredits: 0
+}
+
 const defaultSettings = {
   apiBaseUrl: 'https://grsai.dakka.com.cn',
   apiKeys: ['', ''],
@@ -34,6 +39,7 @@ const defaultSettings = {
   },
   themeMode: 'dark',
   downloadCleanupEnabled: true,
+  dashboardCreditState: defaultDashboardCreditState,
   creditState: defaultCreditState
 }
 
@@ -179,6 +185,17 @@ function normalizeCreditState(rawCreditState = {}) {
   }
 }
 
+function normalizeDashboardCreditState(rawDashboardCreditState = {}) {
+  const source = rawDashboardCreditState && typeof rawDashboardCreditState === 'object'
+    ? rawDashboardCreditState
+    : {}
+
+  return {
+    totalCredits: normalizeNonNegativeInteger(source.totalCredits),
+    remainingCredits: normalizeNonNegativeInteger(source.remainingCredits)
+  }
+}
+
 function applyCreditAdjustment(creditState, adjustment = {}, { getNow = () => new Date().toISOString() } = {}) {
   const normalizedCreditState = normalizeCreditState(creditState)
   const amount = normalizeNonNegativeInteger(adjustment.amount)
@@ -279,6 +296,7 @@ function normalizeSettings(rawSettings = {}) {
     downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
+    dashboardCreditState: normalizeDashboardCreditState(mergedSettings.dashboardCreditState),
     creditState: normalizeCreditState(mergedSettings.creditState),
     apiKeys,
     activeApiKeyIndex,
@@ -380,5 +398,6 @@ function createSettingsStoreService ({ store }) {
 module.exports = {
   createSettingsStoreService,
   defaultSettings,
-  defaultCreditState
+  defaultCreditState,
+  defaultDashboardCreditState
 }
