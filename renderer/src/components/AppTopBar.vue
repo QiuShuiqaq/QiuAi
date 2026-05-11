@@ -33,10 +33,6 @@ const contactGroups = [
     description: '点击图片可查看你的微信联系入口',
     images: [
       {
-        name: 'Qiushui',
-        url: new URL('../../../icon/Qiushui.jpg', import.meta.url).href
-      },
-      {
         name: 'Dockerfans',
         url: new URL('../../../icon/Dockerfans.jpg', import.meta.url).href
       }

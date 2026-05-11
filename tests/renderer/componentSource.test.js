@@ -41,7 +41,7 @@ describe('component sources', () => {
     expect(topbarSource).toContain('v-if="themeOptions.length > 1"')
     expect(topbarSource).toContain('weixin.png')
     expect(topbarSource).toContain('qiyeweixin.png')
-    expect(topbarSource).toContain('Qiushui.jpg')
+    expect(topbarSource).not.toContain('Qiushui.jpg')
     expect(topbarSource).toContain('Dockerfans.jpg')
     expect(topbarSource).toContain('Qiyeweixin.jpg')
     expect(topbarSource).toContain('微信')
