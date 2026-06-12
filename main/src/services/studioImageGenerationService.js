@@ -8,11 +8,15 @@ const DEFAULT_OPTIONAL_SINGLE_IMAGE_MODELS = ['nano-banana-2', 'nano-banana-2-cl
 const MAX_SERIES_DESIGN_IMAGES = 30
 const SERIES_DESIGN_SOFT_WEIGHT = 12
 const SERIES_GENERATE_SOFT_TOTAL = 8
-const SERIES_GROUP_CONCURRENCY = 5
+const SERIES_GROUP_CONCURRENCY = 2
 const MAX_SERIES_GENERATE_GROUP_SIZE = 500
 const REMOTE_RESULT_POLL_INTERVAL_MS = 2500
 const REMOTE_RESULT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000
 const REMOTE_RESULT_STALL_TIMEOUT_MS = 10 * 60 * 1000
+const GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS = 90 * 60 * 1000
+const GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS = 30 * 60 * 1000
+const GROUPED_REMOTE_RESULT_POLL_INTERVAL_MAX_MS = 10000
+const GROUPED_SUBTASK_AUTO_RETRY_COUNT = 1
 const EMPTY_IMAGE_TYPE_TEMPLATE_ID = 'system-empty-image-type'
 const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
 const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
@@ -254,6 +258,30 @@ function isModerationFailureMessage(message = '') {
     normalizedMessage === '图片任务失败：输出内容触发审核限制'
 }
 
+function shouldAutoRetryGroupedItemError(error = {}) {
+  const message = String(error?.message || '').trim()
+  const code = String(error?.code || '').trim()
+
+  if (isModerationFailureMessage(message)) {
+    return true
+  }
+
+  if (
+    message === '图片任务长时间无进展，请稍后重试' ||
+    message === '图片任务执行超时，请拆分任务或稍后重试'
+  ) {
+    return true
+  }
+
+  return [
+    'socket hang up',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'network error'
+  ].some((keyword) => message.includes(keyword) || code.includes(keyword))
+}
+
 function createResultCardFromSavedImage(savedImage = {}, { id, model, title, promptSummary, sourceImageName, promptFinal = '' }) {
   return {
     id,
@@ -280,17 +308,23 @@ function createSeriesOutputFromSavedImage(savedImage = {}, { id, title, model, s
   }
 }
 
-function createSeriesFallbackOutput(originalOutput = {}, {
+function createSeriesEmptyOutput({
   id,
   title,
+  model,
+  promptFinal = '',
+  assignmentId = '',
   error
 } = {}) {
   return {
-    ...originalOutput,
     id,
     title,
-    model: '原图保留',
-    sourceTag: 'fallback',
+    model,
+    preview: '',
+    savedPath: '',
+    sourceTag: 'empty',
+    promptFinal,
+    assignmentId,
     status: '失败',
     error: String(error || '').trim() || '图片任务执行失败'
   }
@@ -335,6 +369,16 @@ function buildSeriesGenerateOutputDescriptors(promptAssignments = []) {
       composedPrompt: composePrompt([assignment.prompt])
     }
   })
+}
+
+function resolveGroupedPollIntervalMs({
+  attemptCount = 0,
+  baseIntervalMs = REMOTE_RESULT_POLL_INTERVAL_MS,
+  maxIntervalMs = GROUPED_REMOTE_RESULT_POLL_INTERVAL_MAX_MS
+} = {}) {
+  const normalizedAttemptCount = Math.max(0, Number(attemptCount) || 0)
+  const nextIntervalMs = baseIntervalMs * (normalizedAttemptCount < 2 ? 1 : 2 ** Math.min(3, normalizedAttemptCount - 1))
+  return Math.min(maxIntervalMs, nextIntervalMs)
 }
 
 function buildSeriesDesignOutputDescriptors(assignments = []) {
@@ -573,7 +617,11 @@ function createStudioImageGenerationService({
     imageSize,
     filePaths,
     outputDirectory,
-    onProgress
+    onProgress,
+    refreshStallTimeoutOnRunningPoll = false,
+    remoteResultTimeoutMsOverride = remoteResultTimeoutMs,
+    remoteResultStallTimeoutMsOverride = remoteResultStallTimeoutMs,
+    resolveNextPollIntervalMs = null
   }) {
     const settings = settingsService.getSettings()
     const apiKey = resolveApiKey(settings)
@@ -617,6 +665,7 @@ function createStudioImageGenerationService({
       const pollStartedAt = getNowMs()
       let lastObservedProgress = 0
       let lastProgressAt = pollStartedAt
+      let runningPollCount = 0
 
       do {
         completedResult = await getCompletedDrawResultDependency({
@@ -636,6 +685,7 @@ function createStudioImageGenerationService({
         }
 
         if (completedResult.status === 'running') {
+          runningPollCount += 1
           const normalizedProgress = normalizeProgressValue(completedResult.progress, lastObservedProgress)
           if (normalizedProgress > lastObservedProgress) {
             lastObservedProgress = normalizedProgress
@@ -646,8 +696,8 @@ function createStudioImageGenerationService({
             pollStartedAt,
             lastProgressAt,
             getNowMs,
-            remoteResultTimeoutMs,
-            remoteResultStallTimeoutMs
+            remoteResultTimeoutMs: remoteResultTimeoutMsOverride,
+            remoteResultStallTimeoutMs: remoteResultStallTimeoutMsOverride
           })
 
           if (timeoutKind === 'total') {
@@ -658,7 +708,18 @@ function createStudioImageGenerationService({
             throw new Error('图片任务长时间无进展，请稍后重试')
           }
 
-          await wait(remoteResultPollIntervalMs)
+          if (refreshStallTimeoutOnRunningPoll) {
+            lastProgressAt = getNowMs()
+          }
+
+          const nextPollIntervalMs = typeof resolveNextPollIntervalMs === 'function'
+            ? resolveNextPollIntervalMs({
+                runningPollCount,
+                lastObservedProgress
+              })
+            : remoteResultPollIntervalMs
+
+          await wait(nextPollIntervalMs)
         }
       } while (completedResult.status === 'running')
 
@@ -824,61 +885,83 @@ function createStudioImageGenerationService({
           return async () => {
             const sourceFilePath = assignment.storedPath || assignment.path || ''
             const subtaskIndex = (batchIndex * selectedAssignments.length) + selectedIndex
-            try {
-              const batchPrompt = resolveBatchPromptValue({
-                differentialEnabled: assignment.differentialEnabled,
-                batchPrompts: assignment.batchPrompts,
-                fallbackPrompt: assignment.composedPrompt,
-                batchIndex,
-                batchCount
-              })
-              const promptFinal = composeStructuredPrompt({
-                dedicatedPrompt: batchPrompt,
-                globalPrompt: draft.globalPrompt,
-                negativePrompt: draft.negativePrompt
-              })
-              const completedResult = await executeRemoteImageTask({
-                jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-                model: assignment.model || draft.model,
-                prompt: promptFinal,
-                aspectRatio: resolveAspectRatio(assignment.size || draft.size || '1:1'),
-                imageSize: resolveImageSize(assignment.model || draft.model),
-                filePaths: [sourceFilePath],
-                outputDirectory,
-                onProgress: async ({ progress, status }) => {
-                  await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
-                }
-              })
-              const savedImage = completedResult.results?.[0]
-              if (!savedImage) {
-                throw new Error(`${assignment.name} 未返回可用图片`)
-              }
+            const batchPrompt = resolveBatchPromptValue({
+              differentialEnabled: assignment.differentialEnabled,
+              batchPrompts: assignment.batchPrompts,
+              fallbackPrompt: assignment.composedPrompt,
+              batchIndex,
+              batchCount
+            })
+            const promptFinal = composeStructuredPrompt({
+              dedicatedPrompt: batchPrompt,
+              globalPrompt: draft.globalPrompt,
+              negativePrompt: draft.negativePrompt
+            })
 
-              completedCount += 1
-              return {
-                assignmentId: assignment.id,
-                output: createSeriesOutputFromSavedImage(savedImage, {
-                  id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
-                  title: assignment.outputTitle,
+            for (let groupedAttempt = 0; groupedAttempt <= GROUPED_SUBTASK_AUTO_RETRY_COUNT; groupedAttempt += 1) {
+              try {
+                const completedResult = await executeRemoteImageTask({
+                  jobLabel: `series-design-${batchIndex + 1}-${selectedIndex + 1}`,
                   model: assignment.model || draft.model,
-                  sourceTag: 'generated',
-                  promptFinal
+                  prompt: promptFinal,
+                  aspectRatio: resolveAspectRatio(assignment.size || draft.size || '1:1'),
+                  imageSize: resolveImageSize(assignment.model || draft.model),
+                  filePaths: [sourceFilePath],
+                  outputDirectory,
+                  refreshStallTimeoutOnRunningPoll: true,
+                  remoteResultTimeoutMsOverride: GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS,
+                  remoteResultStallTimeoutMsOverride: GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS,
+                  resolveNextPollIntervalMs: ({ runningPollCount }) => {
+                    return resolveGroupedPollIntervalMs({
+                      attemptCount: runningPollCount,
+                      baseIntervalMs: remoteResultPollIntervalMs
+                    })
+                  },
+                  onProgress: async ({ progress, status }) => {
+                    await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+                  }
                 })
-              }
-            } catch (error) {
-              if (!isModerationFailureMessage(error?.message)) {
-                throw error
-              }
+                const savedImage = completedResult.results?.[0]
+                if (!savedImage) {
+                  throw new Error(`${assignment.name} 未返回可用图片`)
+                }
 
-              failedCount += 1
-              await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
-              return {
-                assignmentId: assignment.id,
-                output: createSeriesFallbackOutput(originalOutputs[assignments.findIndex((item) => item.id === assignment.id)] || {}, {
-                  id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}-fallback`,
-                  title: assignment.outputTitle,
-                  error: error.message
-                })
+                completedCount += 1
+                return {
+                  assignmentId: assignment.id,
+                  output: {
+                    ...createSeriesOutputFromSavedImage(savedImage, {
+                      id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}`,
+                      title: assignment.outputTitle,
+                      model: assignment.model || draft.model,
+                      sourceTag: 'generated',
+                      promptFinal
+                    }),
+                    assignmentId: assignment.id
+                  }
+                }
+              } catch (error) {
+                if (!shouldAutoRetryGroupedItemError(error)) {
+                  throw error
+                }
+
+                if (groupedAttempt < GROUPED_SUBTASK_AUTO_RETRY_COUNT) {
+                  continue
+                }
+
+                failedCount += 1
+                await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
+                return {
+                  assignmentId: assignment.id,
+                  output: createSeriesEmptyOutput({
+                    id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}-empty`,
+                    title: assignment.outputTitle,
+                    model: assignment.model || draft.model,
+                    promptFinal,
+                    assignmentId: assignment.id,
+                    error: error.message
+                  })
+                }
               }
             }
           }
@@ -941,20 +1024,6 @@ function createStudioImageGenerationService({
     }
 
     const sourceFilePath = draft.sourceImage?.storedPath || draft.sourceImage?.path || ''
-    const sourcePreview = sourceFilePath
-      ? await toDataUrlDependency({
-          filePath: sourceFilePath,
-          mimeType: getMimeTypeFromPathDependency(sourceFilePath)
-        })
-      : ''
-    const sourceFallbackOutput = {
-      id: `${taskId}-series-generate-source-original`,
-      title: draft.sourceImage?.name || 'source-image',
-      model: 'original',
-      preview: sourcePreview,
-      savedPath: sourceFilePath,
-      sourceTag: 'original'
-    }
     const groupedResults = []
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
@@ -964,56 +1033,78 @@ function createStudioImageGenerationService({
         outputDescriptors.map((promptAssignment, outputIndex) => {
           return async () => {
             const subtaskIndex = (batchIndex * generateCount) + outputIndex
-            try {
-              const batchPrompt = resolveBatchPromptValue({
-                differentialEnabled: promptAssignment.differentialEnabled,
-                batchPrompts: promptAssignment.batchPrompts,
-                fallbackPrompt: promptAssignment.composedPrompt,
-                batchIndex,
-                batchCount
-              })
-              const promptFinal = composeStructuredPrompt({
-                dedicatedPrompt: batchPrompt,
-                globalPrompt: draft.globalPrompt,
-                negativePrompt: draft.negativePrompt
-              })
-              const completedResult = await executeRemoteImageTask({
-                jobLabel: `series-generate-${batchIndex + 1}-${outputIndex + 1}`,
-                model: draft.model,
-                prompt: promptFinal,
-                aspectRatio: resolveAspectRatio(draft.size || '1:1'),
-                imageSize: resolveImageSize(draft.model),
-                filePaths: [sourceFilePath],
-                outputDirectory,
-                onProgress: async ({ progress, status }) => {
-                  await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+            const batchPrompt = resolveBatchPromptValue({
+              differentialEnabled: promptAssignment.differentialEnabled,
+              batchPrompts: promptAssignment.batchPrompts,
+              fallbackPrompt: promptAssignment.composedPrompt,
+              batchIndex,
+              batchCount
+            })
+            const promptFinal = composeStructuredPrompt({
+              dedicatedPrompt: batchPrompt,
+              globalPrompt: draft.globalPrompt,
+              negativePrompt: draft.negativePrompt
+            })
+
+            for (let groupedAttempt = 0; groupedAttempt <= GROUPED_SUBTASK_AUTO_RETRY_COUNT; groupedAttempt += 1) {
+              try {
+                const completedResult = await executeRemoteImageTask({
+                  jobLabel: `series-generate-${batchIndex + 1}-${outputIndex + 1}`,
+                  model: draft.model,
+                  prompt: promptFinal,
+                  aspectRatio: resolveAspectRatio(draft.size || '1:1'),
+                  imageSize: resolveImageSize(draft.model),
+                  filePaths: [sourceFilePath],
+                  outputDirectory,
+                  refreshStallTimeoutOnRunningPoll: true,
+                  remoteResultTimeoutMsOverride: GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS,
+                  remoteResultStallTimeoutMsOverride: GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS,
+                  resolveNextPollIntervalMs: ({ runningPollCount }) => {
+                    return resolveGroupedPollIntervalMs({
+                      attemptCount: runningPollCount,
+                      baseIntervalMs: remoteResultPollIntervalMs
+                    })
+                  },
+                  onProgress: async ({ progress, status }) => {
+                    await progressReporter.reportSubtaskProgress(subtaskIndex, progress, status)
+                  }
+                })
+                const savedImage = completedResult.results?.[0]
+                if (!savedImage) {
+                  throw new Error(`第 ${batchIndex + 1} 组结果 ${outputIndex + 1} 未返回可用图片`)
                 }
-              })
-              const savedImage = completedResult.results?.[0]
-              if (!savedImage) {
-                throw new Error(`第 ${batchIndex + 1} 组结果 ${outputIndex + 1} 未返回可用图片`)
-              }
 
-              completedCount += 1
-              return createSeriesOutputFromSavedImage(savedImage, {
-                id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
-                title: promptAssignment.outputTitle,
-                model: draft.model,
-                sourceTag: 'generated',
-                promptFinal
-              })
-            } catch (error) {
-              if (!isModerationFailureMessage(error?.message)) {
-                throw error
-              }
+                completedCount += 1
+                return {
+                  ...createSeriesOutputFromSavedImage(savedImage, {
+                    id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
+                    title: promptAssignment.outputTitle,
+                    model: draft.model,
+                    sourceTag: 'generated',
+                    promptFinal
+                  }),
+                  assignmentId: promptAssignment.id
+                }
+              } catch (error) {
+                if (!shouldAutoRetryGroupedItemError(error)) {
+                  throw error
+                }
 
-              failedCount += 1
-              await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
-              return createSeriesFallbackOutput(sourceFallbackOutput, {
-                id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}-fallback`,
-                title: promptAssignment.outputTitle,
-                error: error.message
-              })
+                if (groupedAttempt < GROUPED_SUBTASK_AUTO_RETRY_COUNT) {
+                  continue
+                }
+
+                failedCount += 1
+                await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
+                return createSeriesEmptyOutput({
+                  id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}-empty`,
+                  title: promptAssignment.outputTitle,
+                  model: draft.model,
+                  promptFinal,
+                  assignmentId: promptAssignment.id,
+                  error: error.message
+                })
+              }
             }
           }
         }),

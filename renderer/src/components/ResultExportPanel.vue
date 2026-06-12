@@ -46,17 +46,14 @@ function toggleItem(itemId) {
 }
 
 function handleBatchDownload() {
-  // 批量下载事件预留：后续可在这里接入本地导出与下载逻辑。
   emit('batch-download')
 }
 
 function handleOpenOutputDirectory(directoryPath) {
-  // 打开输出目录事件预留：后续可在这里接入桌面端目录打开逻辑。
   emit('open-output-directory', directoryPath)
 }
 
 function handleDeleteExportItem(itemId) {
-  // 删除结果文件夹事件预留：后续可在这里接入桌面端目录删除逻辑。
   emit('delete-export-item', itemId)
 }
 
@@ -94,22 +91,24 @@ function goToNextPage() {
 
     <div class="module-scroll panel-content panel-content--export-scroll panel-content--with-footer scrollbar-hidden">
       <article v-for="item in pagedExportItems" :key="item.id" class="export-item">
-        <label class="export-item__toggle">
-          <input
-            class="export-item__checkbox"
-            :checked="selectedExportIds.includes(item.id)"
-            type="checkbox"
-            @change="toggleItem(item.id)"
-          />
-        </label>
+        <div class="export-item__main">
+          <label class="export-item__toggle">
+            <input
+              class="export-item__checkbox"
+              :checked="selectedExportIds.includes(item.id)"
+              type="checkbox"
+              @change="toggleItem(item.id)"
+            />
+          </label>
 
-        <label class="export-item__label">
-          <span class="export-item__copy">
-            <strong>{{ item.name }}</strong>
-            <small>{{ item.type }} / {{ item.status }}</small>
-            <small>{{ `${item.itemCount || 0} 个图片` }}</small>
-          </span>
-        </label>
+          <label class="export-item__label">
+            <span class="export-item__copy">
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.type }} / {{ item.status }}</small>
+              <small>{{ `${item.itemCount || 0} 个图片` }}</small>
+            </span>
+          </label>
+        </div>
 
         <div class="export-item__actions">
           <button
@@ -134,7 +133,7 @@ function goToNextPage() {
         </div>
       </article>
 
-      <p class="section-copy">复选框用于批量选择下载的结果文件夹。</p>
+      <p class="section-copy">复选框用于批量选择需要导出的结果文件夹。</p>
     </div>
 
     <div v-if="totalPages > 1" class="export-pagination">

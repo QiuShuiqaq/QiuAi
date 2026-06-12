@@ -383,18 +383,27 @@ describe('studioImageGenerationService', () => {
     )
   })
 
-  it('keeps series-design batches running when one selected image hits output moderation and falls back to the original image', async () => {
-    const createDrawTaskDependency = vi.fn(async () => ({
-      id: `remote-${createDrawTaskDependency.mock.calls.length}`
-    }))
+  it('keeps series-design batches running when one selected image fails twice and leaves an empty output slot', async () => {
+    const remotePromptMap = new Map()
+    const retryCountByPrompt = new Map()
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
+      const id = `remote-${createDrawTaskDependency.mock.calls.length}`
+      remotePromptMap.set(id, prompt)
+      return { id }
+    })
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
-      if (id === 'remote-2') {
-        return {
-          id,
-          status: 'failed',
-          progress: 100,
-          failure_reason: 'output_moderation',
-          error: '输出内容触发审核限制'
+      const prompt = remotePromptMap.get(id) || ''
+      if (prompt.includes('重点展示局部材质与纹理')) {
+        const nextRetryCount = (retryCountByPrompt.get(prompt) || 0) + 1
+        retryCountByPrompt.set(prompt, nextRetryCount)
+        if (nextRetryCount <= 2) {
+          return {
+            id,
+            status: 'failed',
+            progress: 100,
+            failure_reason: 'output_moderation',
+            error: '输出内容触发审核限制'
+          }
         }
       }
 
@@ -459,7 +468,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(5)
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -478,9 +487,12 @@ describe('studioImageGenerationService', () => {
     })
     expect(result.groupedResults[0].outputs[2]).toMatchObject({
       title: '细节图0',
-      sourceTag: 'fallback',
-      model: '原图保留',
+      sourceTag: 'empty',
+      model: 'gpt-image-2',
       status: '失败',
+      savedPath: '',
+      preview: '',
+      assignmentId: 'image-3',
       error: '图片任务失败：输出内容触发审核限制'
     })
     expect(result.groupedResults[1]).toMatchObject({
@@ -629,18 +641,27 @@ describe('studioImageGenerationService', () => {
     expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
   })
 
-  it('keeps series-generate batches running when one generated image hits output moderation and falls back to the source image', async () => {
-    const createDrawTaskDependency = vi.fn(async () => ({
-      id: `remote-${createDrawTaskDependency.mock.calls.length}`
-    }))
+  it('keeps series-generate batches running when one generated image fails twice and leaves an empty output slot', async () => {
+    const remotePromptMap = new Map()
+    const retryCountByPrompt = new Map()
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
+      const id = `remote-${createDrawTaskDependency.mock.calls.length}`
+      remotePromptMap.set(id, prompt)
+      return { id }
+    })
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
-      if (id === 'remote-2') {
-        return {
-          id,
-          status: 'failed',
-          progress: 100,
-          failure_reason: 'output_moderation',
-          error: '杈撳嚭鍐呭瑙﹀彂瀹℃牳闄愬埗'
+      const prompt = remotePromptMap.get(id) || ''
+      if (prompt.includes('moderated output')) {
+        const nextRetryCount = (retryCountByPrompt.get(prompt) || 0) + 1
+        retryCountByPrompt.set(prompt, nextRetryCount)
+        if (nextRetryCount <= 2) {
+          return {
+            id,
+            status: 'failed',
+            progress: 100,
+            failure_reason: 'output_moderation',
+            error: '图片任务失败：输出内容触发审核限制'
+          }
         }
       }
 
@@ -683,7 +704,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(3)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
     expect(result.groupedResults).toHaveLength(1)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -696,17 +717,19 @@ describe('studioImageGenerationService', () => {
       savedPath: 'C:/output/remote-1.png'
     })
     expect(result.groupedResults[0].outputs[1]).toMatchObject({
-      sourceTag: 'fallback',
-      model: '原图保留',
+      sourceTag: 'empty',
+      model: 'gpt-image-2',
       status: '失败',
-      savedPath: 'C:/input/main.png',
+      savedPath: '',
+      preview: '',
+      assignmentId: 'series-generate-2',
       error: '图片任务失败：输出内容触发审核限制'
     })
     expect(result.groupedResults[0].outputs[2]).toMatchObject({
       sourceTag: 'generated',
-      model: 'gpt-image-2',
-      savedPath: 'C:/output/remote-3.png'
+      model: 'gpt-image-2'
     })
+    expect(result.groupedResults[0].outputs[2].savedPath).toMatch(/^C:\/output\/remote-\d+\.png$/)
   })
 
   it('uses batch-specific prompts for series-generate when differential mode is enabled', async () => {
@@ -826,7 +849,7 @@ describe('studioImageGenerationService', () => {
     expect(result.groupedResults[0].outputs).toHaveLength(generateCount)
   })
 
-  it('runs series-generate groups serially with exactly 5 concurrent jobs per group when enough tasks exist', async () => {
+  it('runs series-generate groups serially with exactly 2 concurrent jobs per group when enough tasks exist', async () => {
     const generateCount = 8
     const batchCount = 2
     const firstGroupSize = generateCount
@@ -932,9 +955,9 @@ describe('studioImageGenerationService', () => {
       }
     })
     const totalJobs = generateCount * batchCount
-    await waitForStartedJobsAtLeast(5)
-    expect(startedJobIds).toHaveLength(5)
-    expect(activeCount).toBe(5)
+    await waitForStartedJobsAtLeast(2)
+    expect(startedJobIds).toHaveLength(2)
+    expect(activeCount).toBe(2)
     for (let index = 0; index < totalJobs; index += 1) {
       await waitForStartedJobsAtLeast(index + 1)
       completionGates.get(startedJobIds[index])?.resolve()
@@ -947,8 +970,8 @@ describe('studioImageGenerationService', () => {
     expect(secondGroupStartedAtCompletionCount).toBe(firstGroupSize)
     expect(activeBeforeSecondGroupStart).toBe(0)
     expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, firstGroupSize))
-    expect(activeBeforeFirstCompletion).toBe(5)
-    expect(maxConcurrent).toBe(5)
+    expect(activeBeforeFirstCompletion).toBe(2)
+    expect(maxConcurrent).toBe(2)
   })
 
   it('does not append prompt template service content during generation when assignment prompt is already the source of truth', async () => {
@@ -1068,6 +1091,79 @@ describe('studioImageGenerationService', () => {
       '默认提示词\n统一风格',
       '默认提示词\n统一风格'
     ])
+  })
+
+  it('does not stall grouped series-generate subtasks too early when remote status keeps running without progress changes', async () => {
+    const wait = vi.fn(async () => undefined)
+    const createDrawTaskDependency = vi.fn(async () => ({
+      id: `remote-${createDrawTaskDependency.mock.calls.length}`
+    }))
+    const pollCountById = new Map()
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      const nextCount = (pollCountById.get(id) || 0) + 1
+      pollCountById.set(id, nextCount)
+
+      if (nextCount < 4) {
+        return {
+          id,
+          status: 'running',
+          progress: 0,
+          results: []
+        }
+      }
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    let nowMs = 0
+    const service = createService({
+      wait,
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency,
+      getNowMs: () => {
+        nowMs += 60_000
+        return nowMs
+      },
+      remoteResultTimeoutMs: 30 * 60 * 1000,
+      remoteResultStallTimeoutMs: 5 * 60 * 1000
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-running-without-progress',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: '统一风格',
+        generateCount: 1,
+        batchCount: 1,
+        promptAssignments: [
+          { id: 'series-generate-1', index: 1, prompt: '默认提示词', imageType: '商品主图' }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0]).toMatchObject({
+      status: 'succeeded',
+      completedCount: 1,
+      failedCount: 0
+    })
+    expect(wait).toHaveBeenCalled()
   })
 
   it('fails with a stall-timeout message when remote draw result keeps running without progress for too long', async () => {

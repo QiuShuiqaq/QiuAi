@@ -1,7 +1,14 @@
 const path = require('node:path')
 const { BrowserWindow } = require('electron')
 
+let mainWindowInstance = null
+
 function createMainWindow () {
+  if (mainWindowInstance && !mainWindowInstance.isDestroyed()) {
+    mainWindowInstance.focus()
+    return mainWindowInstance
+  }
+
   const mainWindow = new BrowserWindow({
     width: 1320,
     height: 880,
@@ -14,6 +21,13 @@ function createMainWindow () {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
+    }
+  })
+  mainWindowInstance = mainWindow
+
+  mainWindow.on('closed', () => {
+    if (mainWindowInstance === mainWindow) {
+      mainWindowInstance = null
     }
   })
 

@@ -104,7 +104,7 @@ const latestTaskError = computed(() => {
 const selectedPreview = ref(null)
 
 function openPreview(item) {
-  if (!item?.preview) {
+  if (!item?.preview || item.sourceTag === 'empty') {
     return
   }
 
@@ -234,10 +234,14 @@ function resolvePromptFinal(value) {
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
-              <button class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
+              <button v-if="output.preview" class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
                 <img :src="output.preview" :alt="output.title" />
               </button>
+              <div v-else class="image-result-card__preview image-result-card__preview--empty">
+                <span>生成失败</span>
+              </div>
               <strong>{{ output.model }}</strong>
+              <span v-if="output.error" class="task-card__error">{{ output.error }}</span>
               <label v-if="resolvePromptFinal(output.promptFinal)" class="form-field image-result-card__prompt">
                 <span>发送提示词</span>
                 <textarea :value="resolvePromptFinal(output.promptFinal)" rows="3" readonly></textarea>
@@ -256,10 +260,14 @@ function resolvePromptFinal(value) {
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
-              <button class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
+              <button v-if="output.preview" class="image-preview-button image-result-card__preview" type="button" @click="openPreview(output)">
                 <img :src="output.preview" :alt="output.title" />
               </button>
+              <div v-else class="image-result-card__preview image-result-card__preview--empty">
+                <span>生成失败</span>
+              </div>
               <strong>{{ output.model }}</strong>
+              <span v-if="output.error" class="task-card__error">{{ output.error }}</span>
               <label v-if="resolvePromptFinal(output.promptFinal)" class="form-field image-result-card__prompt">
                 <span>发送提示词</span>
                 <textarea :value="resolvePromptFinal(output.promptFinal)" rows="3" readonly></textarea>
