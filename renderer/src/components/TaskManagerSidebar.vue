@@ -35,6 +35,7 @@ const statusClassMap = {
   等待中: 'task-status--waiting',
   进行中: 'task-status--running',
   待确认: 'task-status--running',
+  部分完成: 'task-status--completed',
   已完成: 'task-status--completed',
   失败: 'task-status--failed'
 }

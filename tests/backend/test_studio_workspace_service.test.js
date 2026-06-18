@@ -1623,6 +1623,201 @@ describe('studioWorkspaceService', () => {
     expect(task.currentGroupTotalCount).toBe(20)
   })
 
+  it('marks grouped series tasks as partial when some outputs fail but other outputs succeed', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async ({ taskId }) => ({
+        textResults: [],
+        comparisonResults: [],
+        groupedResults: [
+          {
+            id: `${taskId}-group-1`,
+            groupIndex: 0,
+            groupTitle: '第 1 组',
+            status: 'partial',
+            completedCount: 2,
+            failedCount: 1,
+            outputs: [
+              {
+                id: `${taskId}-output-1`,
+                title: '主图0',
+                model: 'gpt-image-2',
+                preview: createPreviewDataUrl('partial-success-1')
+              },
+              {
+                id: `${taskId}-output-2-empty`,
+                title: '主图1',
+                model: 'gpt-image-2',
+                preview: '',
+                savedPath: '',
+                sourceTag: 'empty',
+                status: '失败',
+                error: 'generate image failed'
+              },
+              {
+                id: `${taskId}-output-3`,
+                title: '主图2',
+                model: 'gpt-image-2',
+                preview: createPreviewDataUrl('partial-success-3')
+              }
+            ]
+          }
+        ],
+        summary: {
+          title: '套图生成 1 组 x 3 张'
+        }
+      }),
+      createId: () => 'studio-partial-task-1',
+      getNow: () => '2026-05-12T08:00:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'series-generate',
+      patch: {
+        taskName: 'PartialCase',
+        model: 'gpt-image-2',
+        generateCount: 3,
+        batchCount: 1,
+        globalPrompt: '统一风格',
+        sourceImage: {
+          name: 'source.png',
+          path: 'C:/input/source.png'
+        },
+        promptAssignments: Array.from({ length: 3 }, (_unused, index) => ({
+          id: `slot-${index + 1}`,
+          index: index + 1,
+          prompt: `prompt-${index + 1}`,
+          imageType: ''
+        }))
+      }
+    })
+
+    const createdTask = await service.createTask({
+      menuKey: 'series-generate'
+    })
+    await service.waitForIdle()
+
+    const snapshot = service.getSnapshot()
+    const task = snapshot.tasks.find((item) => item.id === createdTask.id)
+
+    expect(task).toMatchObject({
+      status: '部分完成',
+      progress: 100,
+      completedSubtaskCount: 2,
+      failedSubtaskCount: 1
+    })
+    expect(snapshot.resultsByMenu['series-generate'].summary.statusLabel).toBe('部分完成')
+    expect(snapshot.workspaceDashboard.seriesGenerateStats.items.find((item) => item.label === '已完成任务')?.value).toBe('1')
+    expect(snapshot.workspaceDashboard.seriesGenerateStats.items.find((item) => item.label === '失败任务')?.value).toBe('0')
+  })
+
+  it('preserves failed empty outputs in persisted grouped results after task completion', async () => {
+    const store = createMemoryStore()
+
+    const { createSettingsStoreService } = await import('../../main/src/services/settingsStoreService.js')
+    const { createStudioWorkspaceService, STUDIO_WORKSPACE_KEY } = await import('../../main/src/services/studioWorkspaceService.js')
+
+    const settingsService = createSettingsStoreService({ store })
+    await seedCredits(settingsService)
+    const service = createStudioWorkspaceService({
+      store,
+      settingsService,
+      ...createEmptyOutputScanDependencies(),
+      ensureDirectory: async () => undefined,
+      persistSourceFiles: async () => [],
+      writeFile: async () => undefined,
+      generateImageResults: async ({ taskId }) => ({
+        textResults: [],
+        comparisonResults: [],
+        groupedResults: [
+          {
+            id: `${taskId}-group-1`,
+            groupIndex: 0,
+            groupTitle: '第 1 组',
+            status: 'partial',
+            completedCount: 1,
+            failedCount: 1,
+            outputs: [
+              {
+                id: `${taskId}-output-1`,
+                title: '主图0',
+                model: 'gpt-image-2',
+                preview: createPreviewDataUrl('persisted-success-1')
+              },
+              {
+                id: `${taskId}-output-2-empty`,
+                title: '主图1',
+                model: 'gpt-image-2',
+                preview: '',
+                savedPath: '',
+                sourceTag: 'empty',
+                status: '失败',
+                error: '图片任务长时间无进展，请稍后重试'
+              }
+            ]
+          }
+        ],
+        summary: {
+          title: '套图生成 1 组 x 2 张'
+        }
+      }),
+      createId: () => 'studio-persist-empty-1',
+      getNow: () => '2026-05-12T08:10:00.000Z'
+    })
+
+    await service.saveDraft({
+      menuKey: 'series-generate',
+      patch: {
+        taskName: 'PersistEmptyCase',
+        model: 'gpt-image-2',
+        generateCount: 2,
+        batchCount: 1,
+        globalPrompt: '统一风格',
+        sourceImage: {
+          name: 'source.png',
+          path: 'C:/input/source.png'
+        },
+        promptAssignments: Array.from({ length: 2 }, (_unused, index) => ({
+          id: `slot-${index + 1}`,
+          index: index + 1,
+          prompt: `prompt-${index + 1}`,
+          imageType: ''
+        }))
+      }
+    })
+
+    await service.createTask({
+      menuKey: 'series-generate'
+    })
+    await service.waitForIdle()
+
+    const persistedState = store.get(STUDIO_WORKSPACE_KEY, {})
+    const persistedOutputs = persistedState.resultsByMenu?.['series-generate']?.groupedResults?.[0]?.outputs || []
+    const failedOutput = persistedOutputs.find((item) => item.sourceTag === 'empty')
+
+    expect(persistedOutputs).toHaveLength(2)
+    expect(failedOutput).toMatchObject({
+      title: '主图1',
+      sourceTag: 'empty',
+      savedPath: '',
+      preview: '',
+      status: '失败',
+      error: '图片任务长时间无进展，请稍后重试'
+    })
+  })
+
   it('builds network monitor card from recent request metrics', async () => {
     const store = createMemoryStore()
 

@@ -46,7 +46,7 @@ const taskStatusClassMap = {
   等待中: 'task-status--waiting',
   进行中: 'task-status--running',
   待确认: 'task-status--running',
-  ['\u5df2\u5b8c\u6210']: 'task-status--completed',
+  已完成: 'task-status--completed',
   失败: 'task-status--failed'
 }
 
@@ -101,6 +101,33 @@ const latestTaskError = computed(() => {
   return String(props.latestTask?.error || '').trim()
 })
 
+const slowTaskHint = computed(() => {
+  const latestTask = props.latestTask
+  if (!latestTask || latestTask.status !== '进行中') {
+    return ''
+  }
+
+  const totalSubtaskCount = Number(latestTask.totalSubtaskCount || 0)
+  const currentGroupTotalCount = Number(latestTask.currentGroupTotalCount || 0)
+  const currentGroupCompletedCount = Number(latestTask.currentGroupCompletedCount || 0)
+  const createdAtMs = latestTask.createdAt ? new Date(latestTask.createdAt).getTime() : 0
+  const elapsedMs = createdAtMs > 0 ? Date.now() - createdAtMs : 0
+
+  if (totalSubtaskCount <= 1 || currentGroupTotalCount <= 0) {
+    return ''
+  }
+
+  if (currentGroupCompletedCount >= currentGroupTotalCount) {
+    return ''
+  }
+
+  if (elapsedMs < 90 * 1000) {
+    return ''
+  }
+
+  return '当前任务中存在一张图片生成较慢，请耐心等待'
+})
+
 const selectedPreview = ref(null)
 
 function openPreview(item) {
@@ -123,9 +150,8 @@ function resolvePromptFinal(value) {
   return String(value || '').trim()
 }
 
-// 模型价格主区示例：
+// 模型价格展示示例保留：
 // gpt-image-2
-// 3000 / 次
 </script>
 
 <template>
@@ -133,7 +159,7 @@ function resolvePromptFinal(value) {
     <header class="section-header">
       <div>
         <h2>效果展示</h2>
-        <p class="section-copy">{{ resultPayload.summary?.title || `${menuLabel} 当前渲染占位` }}</p>
+        <p class="section-copy">{{ resultPayload.summary?.title || `${menuLabel} 当前暂无结果` }}</p>
       </div>
     </header>
 
@@ -142,7 +168,7 @@ function resolvePromptFinal(value) {
         <div class="latest-task-progress__header">
           <div>
             <h3>任务进度</h3>
-            <p class="section-copy">当前仅展示这个模块最新提交的一个任务</p>
+            <p class="section-copy">当前仅展示这个模块最新提交的一条任务</p>
           </div>
           <strong :class="['task-status', latestTaskStatusClass]">{{ latestTask?.status || '--' }}</strong>
         </div>
@@ -157,6 +183,11 @@ function resolvePromptFinal(value) {
         <div class="task-progress">
           <span class="latest-task-progress__bar" :style="{ width: latestTaskProgressWidth }"></span>
         </div>
+
+        <article v-if="slowTaskHint" class="latest-task-progress__item latest-task-progress__item--warning">
+          <span>等待提示</span>
+          <strong>{{ slowTaskHint }}</strong>
+        </article>
 
         <article v-if="latestTask?.status === '失败' && latestTask?.error" class="latest-task-progress__item">
           <span>失败原因</span>
@@ -186,7 +217,7 @@ function resolvePromptFinal(value) {
 
       <div v-if="!showModelPricing && !hasContent" class="empty-state">
         <strong>空状态占位</strong>
-        <p>当前模块还没有结果返回，这里保留文本或图片结果渲染位。</p>
+        <p>当前模块还没有结果返回，这里会展示文本或图片结果。</p>
       </div>
 
       <section v-if="showSingleImage && resultPayload.comparisonResults?.length" class="result-image-block">

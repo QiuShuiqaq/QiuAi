@@ -683,9 +683,66 @@ function countCurrentResults(resultPayload = {}) {
   return (resultPayload.textResults || []).length + (resultPayload.comparisonResults || []).length + groupedResultCount
 }
 
+function resolveGroupedExecutionOutcome(resultPayload = {}) {
+  const groups = Array.isArray(resultPayload.groupedResults) ? resultPayload.groupedResults : []
+
+  if (!groups.length) {
+    return {
+      taskStatus: '已完成',
+      statusLabel: '已完成',
+      errorMessage: ''
+    }
+  }
+
+  let hasSucceededGroup = false
+  let hasFailedGroup = false
+  let firstFailedOutputError = ''
+
+  for (const group of groups) {
+    const normalizedCompletedCount = Math.max(0, Number(group?.completedCount) || 0)
+    const normalizedFailedCount = Math.max(0, Number(group?.failedCount) || 0)
+    const normalizedStatus = String(group?.status || '').trim()
+
+    if (normalizedStatus === 'partial' || (normalizedCompletedCount > 0 && normalizedFailedCount > 0)) {
+      hasSucceededGroup = true
+      hasFailedGroup = true
+    } else if (normalizedStatus === 'failed' || (normalizedFailedCount > 0 && normalizedCompletedCount === 0)) {
+      hasFailedGroup = true
+    } else {
+      hasSucceededGroup = true
+    }
+
+    if (!firstFailedOutputError) {
+      firstFailedOutputError = String((group.outputs || []).find((output) => String(output?.error || '').trim())?.error || '').trim()
+    }
+  }
+
+  if (hasFailedGroup && hasSucceededGroup) {
+    return {
+      taskStatus: '部分完成',
+      statusLabel: '部分完成',
+      errorMessage: ''
+    }
+  }
+
+  if (hasFailedGroup) {
+    return {
+      taskStatus: '失败',
+      statusLabel: '失败',
+      errorMessage: firstFailedOutputError
+    }
+  }
+
+  return {
+    taskStatus: '已完成',
+    statusLabel: '已完成',
+    errorMessage: ''
+  }
+}
+
 function buildWorkspaceStatsCard({ state, tasks = [], menuKey, title }) {
   const relatedTasks = sortTasks(tasks).filter((task) => resolveTaskMenuKey(task) === menuKey)
-  const completedTaskCount = relatedTasks.filter((task) => task.status === '已完成').length
+  const completedTaskCount = relatedTasks.filter((task) => ['已完成', '部分完成'].includes(task.status)).length
   const failedTaskCount = relatedTasks.filter((task) => task.status === '失败').length
   const exportItems = state.exportItemsByMenu[menuKey] || []
   const resultPayload = state.resultsByMenu[menuKey] || { textResults: [], images: [] }
@@ -1179,8 +1236,6 @@ async function saveStudioResults({
         if (path.resolve(output.savedPath) !== path.resolve(savedPath)) {
           await fs.copyFile(output.savedPath, savedPath)
         }
-      } else {
-        continue
       }
 
       persistedGroup.outputs.push({
@@ -1275,12 +1330,13 @@ function enrichResultPayloadSummary({ menuKey, draft, resultPayload, elapsedMill
   const summary = resultPayload.summary || {}
   const resultCount = countCurrentResults(resultPayload)
   const models = resolveSummaryModels(menuKey, draft, resultPayload)
+  const executionOutcome = resolveGroupedExecutionOutcome(resultPayload)
 
   return {
     ...resultPayload,
     summary: {
       ...summary,
-      statusLabel: '已完成',
+      statusLabel: executionOutcome.statusLabel,
       modelLabel: models.length ? `浣跨敤妯″瀷 ${models.join(' / ')}` : '',
       resultCountLabel: `缁撴灉鏁伴噺 ${resultCount}`,
       elapsedLabel: formatElapsedLabel(elapsedMilliseconds)
@@ -1574,6 +1630,7 @@ function normalizeTaskProgress(progressValue, fallbackValue = 0) {
 
 function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, inputDirectory, outputDirectory, resultPayload }) {
   const groupedProgress = resolveGroupedProgressState(menuKey, draft, resultPayload)
+  const executionOutcome = resolveGroupedExecutionOutcome(resultPayload)
 
   return buildTaskRecord({
     menuKey,
@@ -1588,9 +1645,10 @@ function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, input
     batchCount: menuKey === 'series-generate'
       ? Math.max(1, Number(draft.batchCount) || 1)
       : (menuKey === 'series-design' ? Math.max(1, Number(draft.batchCount) || 1) : 1),
-    status: '已完成',
+    status: executionOutcome.taskStatus,
     progress: 100,
     estimatedCredits: estimateTaskCredits(menuKey, draft),
+    error: executionOutcome.taskStatus === '失败' ? executionOutcome.errorMessage : '',
     ...groupedProgress
   })
 }

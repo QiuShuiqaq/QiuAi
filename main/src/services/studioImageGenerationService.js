@@ -17,7 +17,6 @@ const GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS = 90 * 60 * 1000
 const GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS = 30 * 60 * 1000
 const GROUPED_REMOTE_RESULT_POLL_INTERVAL_MAX_MS = 10000
 const GROUPED_SUBTASK_AUTO_RETRY_COUNT = 1
-const EMPTY_IMAGE_TYPE_TEMPLATE_ID = 'system-empty-image-type'
 const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
 const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
   商品主图: {
@@ -261,6 +260,7 @@ function isModerationFailureMessage(message = '') {
 function shouldAutoRetryGroupedItemError(error = {}) {
   const message = String(error?.message || '').trim()
   const code = String(error?.code || '').trim()
+  const status = Number(error?.response?.status ?? error?.status ?? 0)
 
   if (isModerationFailureMessage(message)) {
     return true
@@ -270,6 +270,18 @@ function shouldAutoRetryGroupedItemError(error = {}) {
     message === '图片任务长时间无进展，请稍后重试' ||
     message === '图片任务执行超时，请拆分任务或稍后重试'
   ) {
+    return true
+  }
+
+  if (message === 'generate image failed' || message.includes('generate image failed')) {
+    return true
+  }
+
+  if ((status >= 500 && status < 600) || status === 429) {
+    return true
+  }
+
+  if (/status code (429|5\d{2})/i.test(message)) {
     return true
   }
 
@@ -548,16 +560,6 @@ function validateStudioImageTask({ menuKey, draft }) {
       throw new Error('套图设计需要为每一张选中图片填写单独提示词')
     }
 
-    if (selectedAssignments.some((item) => {
-      if (item.templateId === EMPTY_IMAGE_TYPE_TEMPLATE_ID && !String(item.imageType || '').trim()) {
-        return false
-      }
-
-      return !SERIES_GENERATE_IMAGE_TYPE_OPTIONS.includes(item.imageType)
-    })) {
-      throw new Error('套图设计需要为每一张选中图片选择图片类型')
-    }
-
     return
   }
 
@@ -581,16 +583,25 @@ function validateStudioImageTask({ menuKey, draft }) {
       throw new Error('套图生成需要为每一张图片填写单独提示词')
     }
 
-    if (promptAssignments.some((item) => {
-      if (item.templateId === EMPTY_IMAGE_TYPE_TEMPLATE_ID && !String(item.imageType || '').trim()) {
-        return false
-      }
-
-      return !item.imageType
-    })) {
-      throw new Error('套图生成需要为每一张图片选择图片类型')
-    }
   }
+}
+
+function resolveTaskRetryLimit(maxRetryCountOverride) {
+  if (!Number.isFinite(Number(maxRetryCountOverride))) {
+    return MAX_RETRY_COUNT
+  }
+
+  return Math.max(0, Math.floor(Number(maxRetryCountOverride)))
+}
+
+function resolveSeriesGroupConcurrency(settings = {}) {
+  const numericValue = Number(settings?.seriesGroupConcurrency)
+
+  if (![2, 3, 4].includes(numericValue)) {
+    return SERIES_GROUP_CONCURRENCY
+  }
+
+  return numericValue
 }
 
 function createStudioImageGenerationService({
@@ -621,7 +632,8 @@ function createStudioImageGenerationService({
     refreshStallTimeoutOnRunningPoll = false,
     remoteResultTimeoutMsOverride = remoteResultTimeoutMs,
     remoteResultStallTimeoutMsOverride = remoteResultStallTimeoutMs,
-    resolveNextPollIntervalMs = null
+    resolveNextPollIntervalMs = null,
+    maxRetryCountOverride
   }) {
     const settings = settingsService.getSettings()
     const apiKey = resolveApiKey(settings)
@@ -641,7 +653,9 @@ function createStudioImageGenerationService({
       getMimeTypeFromPathDependency
     })
 
-    for (let attempt = 0; attempt <= MAX_RETRY_COUNT; attempt += 1) {
+    const maxRetryCount = resolveTaskRetryLimit(maxRetryCountOverride)
+
+    for (let attempt = 0; attempt <= maxRetryCount; attempt += 1) {
       const remoteTask = await createDrawTaskDependency({
         model,
         prompt,
@@ -727,7 +741,7 @@ function createStudioImageGenerationService({
         return completedResult
       }
 
-      const shouldRetry = completedResult.failure_reason === 'error' && attempt < MAX_RETRY_COUNT
+      const shouldRetry = completedResult.failure_reason === 'error' && attempt < maxRetryCount
       await safeRuntimeLog(runtimeLogger, {
         level: shouldRetry ? 'warn' : 'error',
         event: shouldRetry ? 'studio-image-task-retry' : 'studio-image-task-failed',
@@ -835,6 +849,8 @@ function createStudioImageGenerationService({
   }
 
   async function generateSeriesDesignResults({ draft, taskId, outputDirectory, onProgress }) {
+    const settings = settingsService.getSettings()
+    const seriesGroupConcurrency = resolveSeriesGroupConcurrency(settings)
     const assignments = Array.isArray(draft.imageAssignments) ? draft.imageAssignments : []
     const selectedAssignments = buildSeriesDesignOutputDescriptors(assignments.filter((item) => item.selected !== false))
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
@@ -911,6 +927,7 @@ function createStudioImageGenerationService({
                   refreshStallTimeoutOnRunningPoll: true,
                   remoteResultTimeoutMsOverride: GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS,
                   remoteResultStallTimeoutMsOverride: GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS,
+                  maxRetryCountOverride: 0,
                   resolveNextPollIntervalMs: ({ runningPollCount }) => {
                     return resolveGroupedPollIntervalMs({
                       attemptCount: runningPollCount,
@@ -966,7 +983,7 @@ function createStudioImageGenerationService({
             }
           }
         }),
-        SERIES_GROUP_CONCURRENCY
+        seriesGroupConcurrency
       )
 
       generatedItems.forEach((item) => {
@@ -1003,6 +1020,8 @@ function createStudioImageGenerationService({
   }
 
   async function generateSeriesGenerateResults({ draft, taskId, outputDirectory, onProgress }) {
+    const settings = settingsService.getSettings()
+    const seriesGroupConcurrency = resolveSeriesGroupConcurrency(settings)
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const promptAssignments = normalizeSeriesGeneratePromptAssignments(draft.promptAssignments, draft.generateCount, batchCount)
     const outputDescriptors = buildSeriesGenerateOutputDescriptors(promptAssignments)
@@ -1059,6 +1078,7 @@ function createStudioImageGenerationService({
                   refreshStallTimeoutOnRunningPoll: true,
                   remoteResultTimeoutMsOverride: GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS,
                   remoteResultStallTimeoutMsOverride: GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS,
+                  maxRetryCountOverride: 0,
                   resolveNextPollIntervalMs: ({ runningPollCount }) => {
                     return resolveGroupedPollIntervalMs({
                       attemptCount: runningPollCount,
@@ -1108,7 +1128,7 @@ function createStudioImageGenerationService({
             }
           }
         }),
-        SERIES_GROUP_CONCURRENCY
+        seriesGroupConcurrency
       )
 
       groupedResults.push({

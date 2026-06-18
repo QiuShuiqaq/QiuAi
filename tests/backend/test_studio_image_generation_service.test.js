@@ -153,10 +153,10 @@ describe('studioImageGenerationService', () => {
     expect(createDrawTaskDependency.mock.calls[1][0].aspectRatio).toBe('16:9')
   })
 
-  it('rejects series-design drafts that do not provide a full set of image types for selected images', async () => {
+  it('accepts series-design drafts that do not provide a full set of image types for selected images', async () => {
     const service = createService()
 
-    await expect(service.generateImageResults({
+    const result = await service.generateImageResults({
       menuKey: 'series-design',
       taskId: 'task-series-design-missing-type',
       outputDirectory: 'C:/output',
@@ -187,7 +187,10 @@ describe('studioImageGenerationService', () => {
           }
         ]
       }
-    })).rejects.toThrow('套图设计需要为每一张选中图片选择图片类型')
+    })
+
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0].completedCount).toBe(2)
   })
 
   it('accepts the empty system template for series-design when templateId is set and imageType is empty', async () => {
@@ -564,10 +567,10 @@ describe('studioImageGenerationService', () => {
     })).rejects.toThrow('套图生成需要为每一张图片填写单独提示词')
   })
 
-  it('rejects series-generate drafts that do not provide a full set of image types', async () => {
+  it('accepts series-generate drafts that do not provide a full set of image types', async () => {
     const service = createService()
 
-    await expect(service.generateImageResults({
+    const result = await service.generateImageResults({
       menuKey: 'series-generate',
       taskId: 'task-series-generate-missing-type',
       outputDirectory: 'C:/output',
@@ -586,7 +589,10 @@ describe('studioImageGenerationService', () => {
         ],
         size: '1:1'
       }
-    })).rejects.toThrow('套图生成需要为每一张图片选择图片类型')
+    })
+
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0].completedCount).toBe(2)
   })
 
   it('builds series-generate batches from typed prompt assignments and names outputs by type with counters', async () => {
@@ -730,6 +736,162 @@ describe('studioImageGenerationService', () => {
       model: 'gpt-image-2'
     })
     expect(result.groupedResults[0].outputs[2].savedPath).toMatch(/^C:\/output\/remote-\d+\.png$/)
+  })
+
+  it('keeps series-generate batches running when one generated image hits repeated 502 errors and leaves an empty output slot', async () => {
+    const remotePromptMap = new Map()
+    const retryCountByPrompt = new Map()
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
+      const id = `remote-${createDrawTaskDependency.mock.calls.length}`
+      remotePromptMap.set(id, prompt)
+      return { id }
+    })
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      const prompt = remotePromptMap.get(id) || ''
+      if (prompt.includes('gateway output')) {
+        const nextRetryCount = (retryCountByPrompt.get(prompt) || 0) + 1
+        retryCountByPrompt.set(prompt, nextRetryCount)
+        if (nextRetryCount <= 2) {
+          const error = new Error('Request failed with status code 502')
+          error.response = { status: 502 }
+          throw error
+        }
+      }
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    const service = createService({
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-502-partial',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: 'series generate global style',
+        generateCount: 3,
+        batchCount: 1,
+        promptAssignments: [
+          { index: 1, prompt: 'primary output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 2, prompt: 'gateway output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 3, prompt: 'final output', templateId: 'system-empty-image-type', imageType: '' }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0]).toMatchObject({
+      status: 'partial',
+      completedCount: 2,
+      failedCount: 1
+    })
+    expect(result.groupedResults[0].outputs[1]).toMatchObject({
+      sourceTag: 'empty',
+      model: 'gpt-image-2',
+      savedPath: '',
+      preview: '',
+      assignmentId: 'series-generate-2',
+      error: 'Request failed with status code 502'
+    })
+  })
+
+  it('keeps series-generate batches running when one generated image repeatedly returns generate image failed and leaves an empty output slot', async () => {
+    const remotePromptMap = new Map()
+    const retryCountByPrompt = new Map()
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
+      const id = `remote-${createDrawTaskDependency.mock.calls.length}`
+      remotePromptMap.set(id, prompt)
+      return { id }
+    })
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      const prompt = remotePromptMap.get(id) || ''
+      if (prompt.includes('broken output')) {
+        const nextRetryCount = (retryCountByPrompt.get(prompt) || 0) + 1
+        retryCountByPrompt.set(prompt, nextRetryCount)
+        if (nextRetryCount <= 2) {
+          return {
+            id,
+            status: 'failed',
+            progress: 100,
+            failure_reason: 'error',
+            error: 'generate image failed'
+          }
+        }
+      }
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    const service = createService({
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-generate-image-failed-partial',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: 'series generate global style',
+        generateCount: 3,
+        batchCount: 1,
+        promptAssignments: [
+          { index: 1, prompt: 'primary output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 2, prompt: 'broken output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 3, prompt: 'final output', templateId: 'system-empty-image-type', imageType: '' }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0]).toMatchObject({
+      status: 'partial',
+      completedCount: 2,
+      failedCount: 1
+    })
+    expect(result.groupedResults[0].outputs[1]).toMatchObject({
+      sourceTag: 'empty',
+      model: 'gpt-image-2',
+      savedPath: '',
+      preview: '',
+      assignmentId: 'series-generate-2',
+      error: 'generate image failed'
+    })
   })
 
   it('uses batch-specific prompts for series-generate when differential mode is enabled', async () => {

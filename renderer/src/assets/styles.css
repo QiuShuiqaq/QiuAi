@@ -204,6 +204,56 @@ textarea {
   grid-column: 2;
 }
 
+.topbar-center-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  grid-column: 2;
+}
+
+.topbar-concurrency {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-concurrency__label {
+  color: var(--text-sub);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.topbar-concurrency__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.topbar-concurrency__option {
+  min-width: 38px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.topbar-concurrency__option--active {
+  background: linear-gradient(135deg, rgba(114, 91, 255, 0.22) 0%, rgba(167, 139, 250, 0.22) 100%);
+  color: var(--text-main);
+}
+
 .topbar-theme span,
 .section-copy,
 .sidebar-menu-button small,
@@ -2046,6 +2096,11 @@ textarea {
   word-break: break-word;
 }
 
+.latest-task-progress__item--warning {
+  border-color: rgba(246, 186, 66, 0.28);
+  background: rgba(246, 186, 66, 0.08);
+}
+
 .latest-task-progress__bar {
   display: block;
   height: 100%;
@@ -2948,6 +3003,10 @@ textarea {
   .topbar-shell {
     gap: 12px;
     padding: 0 16px;
+  }
+
+  .topbar-center-actions {
+    gap: 10px;
   }
 
   .brand-copy {

@@ -104,6 +104,7 @@ const ratioOptions = [
 ]
 
 const activeTheme = ref('dark')
+const seriesGroupConcurrency = ref(2)
 const activeMenu = ref('workspace')
 const downloadCleanupEnabled = ref(true)
 const selectedExportIds = ref([])
@@ -841,6 +842,9 @@ function applySnapshot(snapshot = {}, settings = {}, options = {}) {
     ...(snapshot.hostInfo || {})
   }
   activeTheme.value = settings.themeMode || snapshot.themeMode || 'dark'
+  seriesGroupConcurrency.value = [2, 3, 4].includes(Number(settings.seriesGroupConcurrency))
+    ? Number(settings.seriesGroupConcurrency)
+    : 2
   downloadCleanupEnabled.value = settings.downloadCleanupEnabled !== false
 
   if (!preserveApiConfig) {
@@ -1020,6 +1024,31 @@ async function handleThemeChange() {
     })
   } catch (error) {
     console.error('Failed to persist theme', error)
+  }
+}
+
+async function handleSeriesGroupConcurrencyChange(nextValue) {
+  const normalizedValue = [2, 3, 4].includes(Number(nextValue)) ? Number(nextValue) : 2
+
+  try {
+    const savedSettings = await saveSettings({
+      seriesGroupConcurrency: normalizedValue
+    })
+    seriesGroupConcurrency.value = [2, 3, 4].includes(Number(savedSettings.seriesGroupConcurrency))
+      ? Number(savedSettings.seriesGroupConcurrency)
+      : normalizedValue
+    showActionFeedback({
+      type: 'success',
+      title: '成功',
+      message: `套图并发已切换到 ${seriesGroupConcurrency.value}`
+    })
+  } catch (error) {
+    console.error('Failed to save series group concurrency', error)
+    showActionFeedback({
+      type: 'error',
+      title: '失败',
+      message: `保存套图并发失败：${buildErrorMessage(error, '设置保存未完成')}`
+    })
   }
 }
 
@@ -1412,10 +1441,6 @@ function validateCurrentTaskBeforeSubmit() {
       return '请为每一张选中图片填写单独提示词'
     }
 
-    if (assignments.some((item) => item.selected !== false && !String(item.templateId || '').trim())) {
-      return '请为每一张选中图片选择图片类型'
-    }
-
     return ''
   }
 
@@ -1446,9 +1471,6 @@ function validateCurrentTaskBeforeSubmit() {
       return '请完整填写每一张图片的单独提示词'
     }
 
-    if (promptAssignments.some((item) => !String(item.templateId || '').trim())) {
-      return '请为每一张图片选择图片类型'
-    }
   }
 
   return ''
@@ -2095,8 +2117,10 @@ onBeforeUnmount(() => {
       :theme-options="themeOptions"
       :active-theme="activeTheme"
       :activation-summary="activationSummary"
+      :series-group-concurrency="seriesGroupConcurrency"
       @brand-click="handleBrandClick"
       @cleanup-click="openClearRuntimeConfirm"
+      @series-group-concurrency-change="handleSeriesGroupConcurrencyChange"
       @theme-change="handleThemeChange"
     />
 

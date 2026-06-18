@@ -37,6 +37,7 @@ const defaultBrowserSettings = {
     'series-generate': ''
   },
   themeMode: 'dark',
+  seriesGroupConcurrency: 2,
   downloadCleanupEnabled: true,
   dashboardCreditState: defaultBrowserDashboardCreditState,
   creditState: defaultBrowserCreditState
@@ -221,6 +222,16 @@ function normalizeDownloadCleanupEnabled (downloadCleanupEnabled = true) {
   return downloadCleanupEnabled !== false
 }
 
+function normalizeSeriesGroupConcurrency (seriesGroupConcurrency = 2) {
+  const numericValue = Number(seriesGroupConcurrency)
+
+  if (![2, 3, 4].includes(numericValue)) {
+    return 2
+  }
+
+  return numericValue
+}
+
 function normalizeUploadDirectories (uploadDirectories = {}) {
   const source = uploadDirectories && typeof uploadDirectories === 'object' ? uploadDirectories : {}
 
@@ -326,6 +337,7 @@ function normalizeBrowserSettings (rawSettings = {}) {
   return {
     ...mergedSettings,
     themeMode: normalizeThemeMode(mergedSettings.themeMode),
+    seriesGroupConcurrency: normalizeSeriesGroupConcurrency(mergedSettings.seriesGroupConcurrency),
     downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
