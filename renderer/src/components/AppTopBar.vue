@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 
-const props = defineProps({
+defineProps({
   brandLabel: {
     type: String,
     required: true
@@ -17,14 +17,10 @@ const props = defineProps({
   activationSummary: {
     type: Object,
     default: null
-  },
-  seriesGroupConcurrency: {
-    type: Number,
-    default: 2
   }
 })
 
-const emit = defineEmits(['brand-click', 'theme-change', 'cleanup-click', 'series-group-concurrency-change'])
+const emit = defineEmits(['brand-click', 'theme-change', 'cleanup-click'])
 
 const wechatIconUrl = new URL('../../../icon/weixin.png', import.meta.url).href
 const enterpriseWechatIconUrl = new URL('../../../icon/qiyeweixin.png', import.meta.url).href
@@ -34,7 +30,7 @@ const contactGroups = [
     key: 'wechat',
     label: '微信',
     iconUrl: wechatIconUrl,
-    description: '点击图片可查看你的微信联系方式入口',
+    description: '点击图片查看微信联系方式入口',
     images: [
       {
         name: 'Dockerfans',
@@ -46,7 +42,7 @@ const contactGroups = [
     key: 'enterprise-wechat',
     label: '企业微信',
     iconUrl: enterpriseWechatIconUrl,
-    description: '点击图片可查看你的企业微信联系方式入口',
+    description: '点击图片查看企业微信联系方式入口',
     images: [
       {
         name: 'Qiyeweixin',
@@ -56,7 +52,6 @@ const contactGroups = [
   }
 ]
 
-const seriesConcurrencyOptions = [2, 3, 4]
 const activeContactKey = ref('')
 
 const activeContactGroup = computed(() => {
@@ -64,35 +59,23 @@ const activeContactGroup = computed(() => {
 })
 
 function onBrandClick() {
-  // Logo 点击事件预留：顶部品牌位后续可接入返回首页或重置工作区逻辑。
   emit('brand-click')
 }
 
 function onThemeChange(event) {
-  // 主题切换事件预留：后续可接入主题持久化或更多主题方案。
   emit('theme-change', event.target.value)
 }
 
 function onCleanupClick() {
-  // 一键清理按钮点击事件预留：后续可接入本地缓存、草稿和日志清理逻辑。
   emit('cleanup-click')
 }
 
 function openContactPreview(contactKey) {
-  // 微信 / 企业微信图片预览切换：点击后展示对应联系图片。
   activeContactKey.value = contactKey
 }
 
 function closeContactPreview() {
   activeContactKey.value = ''
-}
-
-function handleSeriesGroupConcurrencyChange(nextValue) {
-  if (![2, 3, 4].includes(nextValue) || nextValue === props.seriesGroupConcurrency) {
-    return
-  }
-
-  emit('series-group-concurrency-change', nextValue)
 }
 </script>
 
@@ -116,16 +99,7 @@ function handleSeriesGroupConcurrencyChange(nextValue) {
       <div class="topbar-concurrency">
         <span class="topbar-concurrency__label">套图并发</span>
         <div class="topbar-concurrency__group">
-          <button
-            v-for="option in seriesConcurrencyOptions"
-            :key="option"
-            type="button"
-            class="topbar-concurrency__option"
-            :class="{ 'topbar-concurrency__option--active': option === seriesGroupConcurrency }"
-            @click="handleSeriesGroupConcurrencyChange(option)"
-          >
-            {{ option }}
-          </button>
+          <span class="topbar-concurrency__option topbar-concurrency__option--active">4</span>
         </div>
       </div>
     </div>

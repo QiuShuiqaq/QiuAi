@@ -9,8 +9,6 @@ describe('preload source', () => {
     expect(source).toContain('ipcRenderer.invoke(channel, payload)')
     expect(source).toContain('PROMPTS_LIST')
     expect(source).toContain('SETTINGS_SAVE_ADMIN_API_KEY')
-    expect(source).toContain('TASKS_CREATE_LOCAL')
-    expect(source).toContain('TASKS_EXPORT')
     expect(source).toContain('LICENSE_GET_STATUS')
     expect(source).toContain('LICENSE_GET_DEVICE_CODE')
     expect(source).toContain('LICENSE_IMPORT_FILE')

@@ -37,7 +37,6 @@ const defaultBrowserSettings = {
     'series-generate': ''
   },
   themeMode: 'dark',
-  seriesGroupConcurrency: 2,
   downloadCleanupEnabled: true,
   dashboardCreditState: defaultBrowserDashboardCreditState,
   creditState: defaultBrowserCreditState
@@ -222,16 +221,6 @@ function normalizeDownloadCleanupEnabled (downloadCleanupEnabled = true) {
   return downloadCleanupEnabled !== false
 }
 
-function normalizeSeriesGroupConcurrency (seriesGroupConcurrency = 2) {
-  const numericValue = Number(seriesGroupConcurrency)
-
-  if (![2, 3, 4].includes(numericValue)) {
-    return 2
-  }
-
-  return numericValue
-}
-
 function normalizeUploadDirectories (uploadDirectories = {}) {
   const source = uploadDirectories && typeof uploadDirectories === 'object' ? uploadDirectories : {}
 
@@ -337,7 +326,6 @@ function normalizeBrowserSettings (rawSettings = {}) {
   return {
     ...mergedSettings,
     themeMode: normalizeThemeMode(mergedSettings.themeMode),
-    seriesGroupConcurrency: normalizeSeriesGroupConcurrency(mergedSettings.seriesGroupConcurrency),
     downloadCleanupEnabled: normalizeDownloadCleanupEnabled(mergedSettings.downloadCleanupEnabled),
     globalUploadDirectory: normalizeGlobalUploadDirectory(mergedSettings.globalUploadDirectory),
     uploadDirectories: normalizeUploadDirectories(mergedSettings.uploadDirectories),
@@ -646,14 +634,6 @@ export function downloadImage (payload) {
   return invoke(getChannel('DRAW_DOWNLOAD_IMAGE'), payload)
 }
 
-export function pickInputFolder () {
-  return invoke(getChannel('INPUT_PICK_FOLDER'))
-}
-
-export function pickInputFile () {
-  return invoke(getChannel('INPUT_PICK_FILE'))
-}
-
 export function listPromptTemplates () {
   if (!hasBridge()) {
     return Promise.resolve(getBrowserPromptTemplates())
@@ -694,26 +674,6 @@ export function removeNegativePromptTemplate (payload) {
     return Promise.resolve(removeBrowserNegativePromptTemplate(payload))
   }
   return invoke(getChannel('NEGATIVE_PROMPTS_REMOVE'), payload)
-}
-
-export function createLocalTask (payload) {
-  return invoke(getChannel('TASKS_CREATE_LOCAL'), payload)
-}
-
-export function listLocalTasks () {
-  return invoke(getChannel('TASKS_LIST'))
-}
-
-export function getLocalTask (payload) {
-  return invoke(getChannel('TASKS_GET'), payload)
-}
-
-export function runLocalTask (payload) {
-  return invoke(getChannel('TASKS_RUN'), payload)
-}
-
-export function exportLocalTask (payload) {
-  return invoke(getChannel('TASKS_EXPORT'), payload)
 }
 
 export function getStudioSnapshot () {

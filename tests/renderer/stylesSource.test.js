@@ -162,7 +162,7 @@ describe('styles source', () => {
     expect(source).toContain('height: auto;')
     expect(source).toContain('object-fit: contain;')
     expect(source).toContain('.group-output-grid--scroll')
-    expect(source).toContain('.result-group-card__elapsed')
+    expect(source).toContain('.image-result-card__elapsed')
     expect(source).toContain('grid-auto-flow: column;')
     expect(source).toContain('overflow-x: auto;')
     expect(source).toContain('.latest-task-progress')

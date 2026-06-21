@@ -320,18 +320,23 @@ function resolveTemplateById(templateId) {
 
 function handleTemplateSelection(targetKind, index, templateId) {
   const template = resolveTemplateById(templateId)
+  const currentTemplate = targetKind === 'series-design'
+    ? resolveTemplateById(seriesAssignments.value[index]?.templateId)
+    : resolveTemplateById(seriesGeneratePromptAssignments.value[index]?.templateId)
   if (!template) {
     if (targetKind === 'series-design') {
       replaceAssignments(applyTemplateSelectionToAssignment({
         assignments: seriesAssignments.value,
         index,
-        template: null
+        template: null,
+        currentTemplate
       }))
     } else if (targetKind === 'series-generate') {
       replaceSeriesGenerateAssignments(applyTemplateSelectionToPromptAssignment({
         assignments: seriesGeneratePromptAssignments.value,
         index,
-        template: null
+        template: null,
+        currentTemplate
       }))
     }
     return
@@ -341,7 +346,8 @@ function handleTemplateSelection(targetKind, index, templateId) {
     replaceAssignments(applyTemplateSelectionToAssignment({
       assignments: seriesAssignments.value,
       index,
-      template
+      template,
+      currentTemplate
     }))
     return
   }
@@ -350,7 +356,8 @@ function handleTemplateSelection(targetKind, index, templateId) {
     replaceSeriesGenerateAssignments(applyTemplateSelectionToPromptAssignment({
       assignments: seriesGeneratePromptAssignments.value,
       index,
-      template
+      template,
+      currentTemplate
     }))
   }
 }

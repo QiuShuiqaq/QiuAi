@@ -4,6 +4,10 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const os = require('node:os')
 const { pathToFileURL } = require('node:url')
+const {
+  DEFAULT_EMPTY_PROMPT_TEMPLATE_ID,
+  DEFAULT_EMPTY_NEGATIVE_TEMPLATE_ID
+} = require('../../../shared/promptTemplateDefaults')
 const { exportTaskDirectory: defaultExportTaskDirectory } = require('./taskExportService')
 const {
   createStudioImageGenerationService,
@@ -106,8 +110,6 @@ const TASK_SIZE_LIMITS = {
     block: 80
   }
 }
-const DEFAULT_EMPTY_PROMPT_TEMPLATE_ID = 'system-empty-image-type'
-const DEFAULT_EMPTY_NEGATIVE_TEMPLATE_ID = 'system-empty-negative-prompt'
 const EXPORT_FREE_SPACE_MULTIPLIER = 3
 const EXPORT_MIN_REQUIRED_BYTES = 1024
 const workspaceDashboardSections = [
@@ -258,7 +260,6 @@ function normalizeDraftForMenu(menuKey, draft = {}) {
       globalPrompt: draft.globalPrompt || '',
       negativeTemplateId: String(draft.negativeTemplateId || defaultDraft.negativeTemplateId || DEFAULT_EMPTY_NEGATIVE_TEMPLATE_ID),
       negativePrompt: String(draft.negativePrompt || ''),
-      legacyGlobalPrompt: draft.legacyGlobalPrompt || '',
       defaultAssignmentRatio: draft.defaultAssignmentRatio || defaultDraft.defaultAssignmentRatio || draft.size || '1:1',
       defaultAssignmentModel: draft.defaultAssignmentModel || defaultDraft.defaultAssignmentModel || nextModel,
       imageAssignments: normalizeImageAssignments(draft.imageAssignments, normalizedBatchCount),
@@ -279,7 +280,6 @@ function normalizeDraftForMenu(menuKey, draft = {}) {
       globalPrompt: draft.globalPrompt || '',
       negativeTemplateId: String(draft.negativeTemplateId || defaultDraft.negativeTemplateId || DEFAULT_EMPTY_NEGATIVE_TEMPLATE_ID),
       negativePrompt: String(draft.negativePrompt || ''),
-      legacyGlobalPrompt: draft.legacyGlobalPrompt || '',
       generateCount,
       promptAssignments: normalizePromptAssignments(draft.promptAssignments, generateCount, normalizedBatchCount),
       batchCount: normalizedBatchCount,
@@ -377,7 +377,6 @@ function createDefaultDrafts() {
     },
     'series-design': {
       globalPrompt: '围绕XXX统一商品视觉风格，保持XXX主体一致，画面干净专业',
-      legacyGlobalPrompt: '',
       defaultAssignmentRatio: '1:1',
       defaultAssignmentModel: resolveDefaultModelForMenu('series-design'),
       model: resolveDefaultModelForMenu('series-design'),
@@ -388,7 +387,6 @@ function createDefaultDrafts() {
     },
     'series-generate': {
       globalPrompt: '围绕XXX统一商品详情图风格，突出XXX主体与卖点，适合电商展示',
-      legacyGlobalPrompt: '',
       model: resolveDefaultModelForMenu('series-generate'),
       taskName: '',
       sourceImage: null,
@@ -1008,7 +1006,8 @@ function buildSettingsSummary(settings = {}) {
 
 async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
   generateImageResults,
-  onProgress
+  onProgress,
+  onIntermediateResult
 }) {
   if (menuKey === 'single-image') {
     return generateImageResults({
@@ -1016,7 +1015,8 @@ async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
       draft,
       taskId,
       outputDirectory,
-      onProgress
+      onProgress,
+      onIntermediateResult
     })
   }
 
@@ -1026,7 +1026,8 @@ async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
       draft,
       taskId,
       outputDirectory,
-      onProgress
+      onProgress,
+      onIntermediateResult
     })
   }
 
@@ -1036,7 +1037,8 @@ async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
       draft,
       taskId,
       outputDirectory,
-      onProgress
+      onProgress,
+      onIntermediateResult
     })
   }
 
@@ -1046,7 +1048,8 @@ async function buildResultPayload(menuKey, draft, taskId, outputDirectory, {
       draft,
       taskId,
       outputDirectory,
-      onProgress
+      onProgress,
+      onIntermediateResult
     })
   }
 
@@ -1653,6 +1656,20 @@ function buildTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, input
   })
 }
 
+function buildIntermediateResultPayloadForDisplay(resultPayload = {}) {
+  return hydrateResultPayloadForDisplay({
+    ...resultPayload,
+    textResults: Array.isArray(resultPayload.textResults) ? resultPayload.textResults.slice() : [],
+    comparisonResults: Array.isArray(resultPayload.comparisonResults) ? resultPayload.comparisonResults.slice() : [],
+    groupedResults: Array.isArray(resultPayload.groupedResults)
+      ? resultPayload.groupedResults.map((group) => ({
+          ...group,
+          outputs: Array.isArray(group.outputs) ? group.outputs.slice() : []
+        }))
+      : []
+  })
+}
+
 function buildFailedTaskSummary({ menuKey, draft, taskId, taskNumber, createdAt, inputDirectory, outputDirectory, errorMessage }) {
   const groupedProgress = resolveGroupedTaskBaseState(menuKey, draft)
 
@@ -2204,10 +2221,31 @@ function createStudioWorkspaceService({
           task: latestRunningTask
         })
       }
+      const handleIntermediateResult = async (intermediateResultPayload = {}) => {
+        if (executionController.isStopped()) {
+          return
+        }
+
+        const displayResultPayload = buildIntermediateResultPayloadForDisplay(intermediateResultPayload)
+        const intermediateTask = {
+          ...latestRunningTask,
+          ...resolveGroupedProgressState(menuKey, preparedDraft, displayResultPayload)
+        }
+
+        latestRunningTask = intermediateTask
+
+        await persistTaskAndState({
+          task: intermediateTask,
+          resultsByMenuPatch: {
+            [menuKey]: displayResultPayload
+          }
+        })
+      }
       const resultPayloadOutcome = await Promise.race([
         Promise.resolve(buildResultPayload(menuKey, preparedDraft, taskId, outputDirectory, {
           generateImageResults: generateImageResultsDependency,
-          onProgress: handleTaskProgress
+          onProgress: handleTaskProgress,
+          onIntermediateResult: handleIntermediateResult
         })).then((resultPayload) => ({
           type: 'result',
           resultPayload

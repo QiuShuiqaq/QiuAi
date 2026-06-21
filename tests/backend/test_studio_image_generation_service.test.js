@@ -41,7 +41,7 @@ function createService(overrides = {}) {
 }
 
 describe('studioImageGenerationService', () => {
-  it('supports single-design text-to-image without requiring a source image', async () => {
+  it('supports single-design text-to-image with one selected model', async () => {
     const createDrawTaskDependency = vi.fn(async ({ prompt, urls, model }) => ({
       id: `remote-single-design-text-${createDrawTaskDependency.mock.calls.length}`,
       prompt,
@@ -109,88 +109,61 @@ describe('studioImageGenerationService', () => {
     expect(createDrawTaskDependency.mock.calls[0][0].model).toBe('nano-banana-fast')
     expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe('参考原图生成更强卖点表达的商品图\n强化光泽和层次感')
     expect(createDrawTaskDependency.mock.calls[0][0].urls).toHaveLength(1)
-    expect(result.comparisonResults).toHaveLength(1)
-    expect(result.comparisonResults[0].title).toBe('nano-banana-fast 设计结果')
-    expect(result.comparisonResults[0].promptFinal).toBe('参考原图生成更强卖点表达的商品图\n强化光泽和层次感')
+    expect(toDataUrlDependency).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'C:/input/bag-main.jpg'
+    }))
+    expect(result.comparisonResults[0].sourceImageName).toBe('bag-main.jpg')
   })
 
-  it('maps single-design preset size labels to supported remote aspect ratios', async () => {
-    const createDrawTaskDependency = vi.fn(async ({ aspectRatio }) => ({
-      id: `remote-single-design-preset-${createDrawTaskDependency.mock.calls.length}`,
-      aspectRatio
+  it('supports single-image four-model comparison and preserves ordering', async () => {
+    const createDrawTaskDependency = vi.fn(async ({ model }) => ({
+      id: `remote-${model}`
     }))
     const service = createService({
       createDrawTaskDependency
     })
 
-    await service.generateImageResults({
-      menuKey: 'single-design',
-      taskId: 'task-single-design-a4',
+    const result = await service.generateImageResults({
+      menuKey: 'single-image',
+      taskId: 'task-single-image-compare',
       outputDirectory: 'C:/output',
       draft: {
-        model: 'gpt-image-2',
-        prompt: '生成一张适合详情页打印稿的商品图',
-        notes: '',
-        sourceImage: null,
-        size: 'a4-portrait'
+        compareModels: ['nano-banana-pro-vip', 'nano-banana-pro-cl'],
+        sourceImage: {
+          name: 'bag-main.jpg',
+          path: 'C:/input/bag-main.jpg'
+        },
+        prompt: '强化高级感和商品主体',
+        notes: '输出电商风格',
+        size: '1:1'
       }
     })
 
-    await service.generateImageResults({
-      menuKey: 'single-design',
-      taskId: 'task-single-design-8k',
-      outputDirectory: 'C:/output',
-      draft: {
-        model: 'gpt-image-2',
-        prompt: '生成一张适合大屏展示的商品图',
-        notes: '',
-        sourceImage: null,
-        size: '8k-landscape'
-      }
-    })
-
-    expect(createDrawTaskDependency.mock.calls[0][0].aspectRatio).toBe('3:4')
-    expect(createDrawTaskDependency.mock.calls[1][0].aspectRatio).toBe('16:9')
+    expect(createDrawTaskDependency.mock.calls.map((call) => call[0].model)).toEqual([
+      'nano-banana-fast',
+      'gpt-image-2',
+      'nano-banana-2',
+      'nano-banana-2-cl'
+    ])
+    expect(result.comparisonResults).toHaveLength(4)
+    expect(result.summary.title).toBe('单图四模型对比')
   })
 
-  it('accepts series-design drafts that do not provide a full set of image types for selected images', async () => {
+  it('rejects series-design drafts that do not contain any selected image assignment', async () => {
     const service = createService()
 
-    const result = await service.generateImageResults({
+    await expect(service.generateImageResults({
       menuKey: 'series-design',
-      taskId: 'task-series-design-missing-type',
+      taskId: 'task-series-design-empty',
       outputDirectory: 'C:/output',
       draft: {
         model: 'gpt-image-2',
         globalPrompt: '统一高级电商视觉风格',
         batchCount: 1,
         size: '1:1',
-        imageAssignments: [
-          {
-            id: 'image-1',
-            name: 'look-1.png',
-            path: 'C:/input/look-1.png',
-            selected: true,
-            prompt: '突出产品主视觉效果',
-            imageType: '商品主图',
-            size: '4:3',
-            model: 'nano-banana-fast',
-            tagNames: ['高清', '白底']
-          },
-          {
-            id: 'image-2',
-            name: 'look-2.png',
-            path: 'C:/input/look-2.png',
-            selected: true,
-            prompt: '加入尺寸标注信息',
-            imageType: ''
-          }
-        ]
+        imageAssignments: []
       }
-    })
-
-    expect(result.groupedResults).toHaveLength(1)
-    expect(result.groupedResults[0].completedCount).toBe(2)
+    })).rejects.toThrow('套图设计需要先上传一套图片')
   })
 
   it('accepts the empty system template for series-design when templateId is set and imageType is empty', async () => {
@@ -232,6 +205,46 @@ describe('studioImageGenerationService', () => {
     expect(createDrawTaskDependency).toHaveBeenCalledTimes(1)
     expect(createDrawTaskDependency.mock.calls[0][0].prompt).toBe('保留空模板，不追加专属提示词\n统一高级电商视觉风格')
     expect(result.groupedResults).toHaveLength(1)
+  })
+
+  it('accepts series-design assignments without imageType when prompt content is filled manually', async () => {
+    const service = createService()
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-design',
+      taskId: 'task-series-design-manual-prompt',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        globalPrompt: '统一高级电商视觉风格',
+        batchCount: 1,
+        size: '1:1',
+        imageAssignments: [
+          {
+            id: 'image-1',
+            name: 'look-1.png',
+            path: 'C:/input/look-1.png',
+            selected: true,
+            prompt: '突出产品主视觉效果',
+            imageType: '商品主图',
+            size: '4:3',
+            model: 'nano-banana-fast',
+            tagNames: ['高清', '白底']
+          },
+          {
+            id: 'image-2',
+            name: 'look-2.png',
+            path: 'C:/input/look-2.png',
+            selected: true,
+            prompt: '加入尺寸标注信息',
+            imageType: ''
+          }
+        ]
+      }
+    })
+
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0].completedCount).toBe(2)
   })
 
   it('builds series-design batches from typed prompt assignments and keeps full-group outputs ordered', async () => {
@@ -386,7 +399,7 @@ describe('studioImageGenerationService', () => {
     )
   })
 
-  it('keeps series-design batches running when one selected image fails twice and leaves an empty output slot', async () => {
+  it('keeps series-design batches running when one selected image fails and leaves an empty output slot', async () => {
     const remotePromptMap = new Map()
     const retryCountByPrompt = new Map()
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
@@ -471,7 +484,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(5)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -483,6 +496,7 @@ describe('studioImageGenerationService', () => {
       sourceTag: 'generated',
       model: 'nano-banana-fast'
     })
+    expect(result.groupedResults[0].outputs[0].elapsedMs).toBeGreaterThanOrEqual(0)
     expect(result.groupedResults[0].outputs[1]).toMatchObject({
       title: 'look-2.png',
       sourceTag: 'original',
@@ -498,10 +512,11 @@ describe('studioImageGenerationService', () => {
       assignmentId: 'image-3',
       error: '图片任务失败：输出内容触发审核限制'
     })
+    expect(result.groupedResults[0].outputs[2].elapsedMs).toBeGreaterThanOrEqual(0)
     expect(result.groupedResults[1]).toMatchObject({
-      status: 'succeeded',
-      completedCount: 2,
-      failedCount: 0
+      status: 'partial',
+      completedCount: 1,
+      failedCount: 1
     })
   })
 
@@ -581,21 +596,22 @@ describe('studioImageGenerationService', () => {
           path: 'C:/input/main.png'
         },
         globalPrompt: '统一高级电商详情页风格',
-        generateCount: 2,
+        generateCount: 3,
         batchCount: 1,
         promptAssignments: [
-          { index: 1, prompt: '突出产品整体外观', imageType: '商品主图' },
-          { index: 2, prompt: '强调尺寸标注信息', imageType: '' }
+          { index: 1, prompt: '主视觉图', imageType: '' },
+          { index: 2, prompt: '细节图', imageType: '' },
+          { index: 3, prompt: '场景图', imageType: '' }
         ],
         size: '1:1'
       }
     })
 
     expect(result.groupedResults).toHaveLength(1)
-    expect(result.groupedResults[0].completedCount).toBe(2)
+    expect(result.groupedResults[0].outputs).toHaveLength(3)
   })
 
-  it('builds series-generate batches from typed prompt assignments and names outputs by type with counters', async () => {
+  it('builds series-generate batches from prompt assignments and preserves ordering', async () => {
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => ({
       id: `remote-${createDrawTaskDependency.mock.calls.length}`,
       prompt
@@ -621,7 +637,7 @@ describe('studioImageGenerationService', () => {
         promptAssignments: [
           { index: 1, prompt: '突出产品整体外观和电商氛围', imageType: '商品主图' },
           { index: 2, prompt: '重点展示材质和纹理', imageType: '细节图' },
-          { index: 3, prompt: '提供另一个主视觉构图', imageType: '商品主图' }
+          { index: 3, prompt: '提供另一主视觉构图', imageType: '商品主图' }
         ],
         size: '1:1'
       }
@@ -631,10 +647,10 @@ describe('studioImageGenerationService', () => {
     expect(createDrawTaskDependency.mock.calls.map((call) => call[0].prompt)).toEqual([
       '突出产品整体外观和电商氛围\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
       '重点展示材质和纹理\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
-      '提供另一个主视觉构图\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
+      '提供另一主视觉构图\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
       '突出产品整体外观和电商氛围\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
       '重点展示材质和纹理\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素',
-      '提供另一个主视觉构图\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素'
+      '提供另一主视觉构图\n统一高级电商详情页风格\n严格避免以下问题：水印，logo，文字，低清像素'
     ])
     expect(result.groupedResults).toHaveLength(2)
     expect(result.groupedResults[0].outputs).toHaveLength(3)
@@ -647,7 +663,7 @@ describe('studioImageGenerationService', () => {
     expect(result.summary.title).toBe('套图生成 2 组 x 3 张')
   })
 
-  it('keeps series-generate batches running when one generated image fails twice and leaves an empty output slot', async () => {
+  it('keeps series-generate batches running when one generated image fails and leaves an empty output slot', async () => {
     const remotePromptMap = new Map()
     const retryCountByPrompt = new Map()
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
@@ -710,7 +726,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(3)
     expect(result.groupedResults).toHaveLength(1)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -722,6 +738,7 @@ describe('studioImageGenerationService', () => {
       model: 'gpt-image-2',
       savedPath: 'C:/output/remote-1.png'
     })
+    expect(result.groupedResults[0].outputs[0].elapsedMs).toBeGreaterThanOrEqual(0)
     expect(result.groupedResults[0].outputs[1]).toMatchObject({
       sourceTag: 'empty',
       model: 'gpt-image-2',
@@ -731,14 +748,16 @@ describe('studioImageGenerationService', () => {
       assignmentId: 'series-generate-2',
       error: '图片任务失败：输出内容触发审核限制'
     })
+    expect(result.groupedResults[0].outputs[1].elapsedMs).toBeGreaterThanOrEqual(0)
     expect(result.groupedResults[0].outputs[2]).toMatchObject({
       sourceTag: 'generated',
       model: 'gpt-image-2'
     })
+    expect(result.groupedResults[0].outputs[2].elapsedMs).toBeGreaterThanOrEqual(0)
     expect(result.groupedResults[0].outputs[2].savedPath).toMatch(/^C:\/output\/remote-\d+\.png$/)
   })
 
-  it('keeps series-generate batches running when one generated image hits repeated 502 errors and leaves an empty output slot', async () => {
+  it('keeps series-generate batches running when one generated image hits a 502 error and leaves an empty output slot', async () => {
     const remotePromptMap = new Map()
     const retryCountByPrompt = new Map()
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
@@ -797,7 +816,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(3)
     expect(result.groupedResults).toHaveLength(1)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -814,7 +833,7 @@ describe('studioImageGenerationService', () => {
     })
   })
 
-  it('keeps series-generate batches running when one generated image repeatedly returns generate image failed and leaves an empty output slot', async () => {
+  it('keeps series-generate batches running when one generated image returns generate image failed and leaves an empty output slot', async () => {
     const remotePromptMap = new Map()
     const retryCountByPrompt = new Map()
     const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
@@ -877,7 +896,7 @@ describe('studioImageGenerationService', () => {
       }
     })
 
-    expect(createDrawTaskDependency).toHaveBeenCalledTimes(4)
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(3)
     expect(result.groupedResults).toHaveLength(1)
     expect(result.groupedResults[0]).toMatchObject({
       status: 'partial',
@@ -892,6 +911,88 @@ describe('studioImageGenerationService', () => {
       assignmentId: 'series-generate-2',
       error: 'generate image failed'
     })
+  })
+
+  it('keeps series-generate batches running when one generated image exceeds the grouped timeout window and leaves an empty output slot', async () => {
+    const wait = vi.fn(async () => undefined)
+    const remotePromptMap = new Map()
+    const createDrawTaskDependency = vi.fn(async ({ prompt }) => {
+      const id = `remote-${createDrawTaskDependency.mock.calls.length}`
+      remotePromptMap.set(id, prompt)
+      return { id }
+    })
+    const getCompletedDrawResultDependency = vi.fn(async ({ id }) => {
+      const prompt = remotePromptMap.get(id) || ''
+      if (prompt.includes('slow output')) {
+        return {
+          id,
+          status: 'running',
+          progress: 12,
+          results: []
+        }
+      }
+
+      return {
+        id,
+        status: 'succeeded',
+        progress: 100,
+        results: [
+          {
+            previewUrl: `data:image/png;base64,${Buffer.from(id, 'utf8').toString('base64')}`,
+            savedPath: `C:/output/${id}.png`
+          }
+        ]
+      }
+    })
+    let nowMs = 0
+    const service = createService({
+      wait,
+      createDrawTaskDependency,
+      getCompletedDrawResultDependency,
+      getNowMs: () => {
+        nowMs += 60_000
+        return nowMs
+      }
+    })
+
+    const result = await service.generateImageResults({
+      menuKey: 'series-generate',
+      taskId: 'task-series-generate-timeout-partial',
+      outputDirectory: 'C:/output',
+      draft: {
+        model: 'gpt-image-2',
+        sourceImage: {
+          name: 'main.png',
+          path: 'C:/input/main.png'
+        },
+        globalPrompt: 'series generate global style',
+        generateCount: 3,
+        batchCount: 1,
+        promptAssignments: [
+          { index: 1, prompt: 'primary output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 2, prompt: 'slow output', templateId: 'system-empty-image-type', imageType: '' },
+          { index: 3, prompt: 'final output', templateId: 'system-empty-image-type', imageType: '' }
+        ],
+        size: '1:1'
+      }
+    })
+
+    expect(createDrawTaskDependency).toHaveBeenCalledTimes(3)
+    expect(result.groupedResults).toHaveLength(1)
+    expect(result.groupedResults[0]).toMatchObject({
+      status: 'partial',
+      completedCount: 2,
+      failedCount: 1
+    })
+    expect(result.groupedResults[0].outputs[1]).toMatchObject({
+      sourceTag: 'empty',
+      model: 'gpt-image-2',
+      savedPath: '',
+      preview: '',
+      assignmentId: 'series-generate-2',
+      error: '图片任务执行超时，请拆分任务或稍后重试'
+    })
+    expect(result.groupedResults[0].outputs[1].elapsedMs).toBeGreaterThan(0)
   })
 
   it('uses batch-specific prompts for series-generate when differential mode is enabled', async () => {
@@ -1011,7 +1112,7 @@ describe('studioImageGenerationService', () => {
     expect(result.groupedResults[0].outputs).toHaveLength(generateCount)
   })
 
-  it('runs series-generate groups serially with exactly 2 concurrent jobs per group when enough tasks exist', async () => {
+  it('runs series-generate groups serially with exactly 4 concurrent jobs per group when enough tasks exist', async () => {
     const generateCount = 8
     const batchCount = 2
     const firstGroupSize = generateCount
@@ -1117,9 +1218,9 @@ describe('studioImageGenerationService', () => {
       }
     })
     const totalJobs = generateCount * batchCount
-    await waitForStartedJobsAtLeast(2)
-    expect(startedJobIds).toHaveLength(2)
-    expect(activeCount).toBe(2)
+    await waitForStartedJobsAtLeast(4)
+    expect(startedJobIds).toHaveLength(4)
+    expect(activeCount).toBe(4)
     for (let index = 0; index < totalJobs; index += 1) {
       await waitForStartedJobsAtLeast(index + 1)
       completionGates.get(startedJobIds[index])?.resolve()
@@ -1132,8 +1233,8 @@ describe('studioImageGenerationService', () => {
     expect(secondGroupStartedAtCompletionCount).toBe(firstGroupSize)
     expect(activeBeforeSecondGroupStart).toBe(0)
     expect(finishedBeforeSecondGroupStart).toEqual(startedJobIds.slice(0, firstGroupSize))
-    expect(activeBeforeFirstCompletion).toBe(2)
-    expect(maxConcurrent).toBe(2)
+    expect(activeBeforeFirstCompletion).toBe(4)
+    expect(maxConcurrent).toBe(4)
   })
 
   it('does not append prompt template service content during generation when assignment prompt is already the source of truth', async () => {
@@ -1328,7 +1429,7 @@ describe('studioImageGenerationService', () => {
     expect(wait).toHaveBeenCalled()
   })
 
-  it('fails with a stall-timeout message when remote draw result keeps running without progress for too long', async () => {
+  it('fails with a total-timeout message when remote draw result keeps running without progress past the 2-hour window', async () => {
     const wait = vi.fn(async () => undefined)
     const getCompletedDrawResultDependency = vi.fn(async ({ id }) => ({
       id,
@@ -1344,8 +1445,8 @@ describe('studioImageGenerationService', () => {
         nowMs += 60_000
         return nowMs
       },
-      remoteResultTimeoutMs: 60 * 60 * 1000,
-      remoteResultStallTimeoutMs: 5 * 60 * 1000
+      remoteResultTimeoutMs: 2 * 60 * 60 * 1000,
+      remoteResultStallTimeoutMs: 2 * 60 * 60 * 1000
     })
 
     await expect(service.generateImageResults({
@@ -1359,7 +1460,7 @@ describe('studioImageGenerationService', () => {
         sourceImage: null,
         size: '1:1'
       }
-    })).rejects.toThrow('图片任务长时间无进展，请稍后重试')
+    })).rejects.toThrow('图片任务执行超时，请拆分任务或稍后重试')
 
     expect(getCompletedDrawResultDependency).toHaveBeenCalled()
     expect(wait).toHaveBeenCalled()
@@ -1385,8 +1486,8 @@ describe('studioImageGenerationService', () => {
         nowMs += 60_000
         return nowMs
       },
-      remoteResultTimeoutMs: 30 * 60 * 1000,
-      remoteResultStallTimeoutMs: 60 * 60 * 1000
+      remoteResultTimeoutMs: 2 * 60 * 60 * 1000,
+      remoteResultStallTimeoutMs: 2 * 60 * 60 * 1000
     })
 
     await expect(service.generateImageResults({

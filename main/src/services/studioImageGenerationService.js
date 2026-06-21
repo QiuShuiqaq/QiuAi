@@ -8,15 +8,15 @@ const DEFAULT_OPTIONAL_SINGLE_IMAGE_MODELS = ['nano-banana-2', 'nano-banana-2-cl
 const MAX_SERIES_DESIGN_IMAGES = 30
 const SERIES_DESIGN_SOFT_WEIGHT = 12
 const SERIES_GENERATE_SOFT_TOTAL = 8
-const SERIES_GROUP_CONCURRENCY = 2
+const SERIES_GROUP_CONCURRENCY = 4
 const MAX_SERIES_GENERATE_GROUP_SIZE = 500
 const REMOTE_RESULT_POLL_INTERVAL_MS = 2500
-const REMOTE_RESULT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000
-const REMOTE_RESULT_STALL_TIMEOUT_MS = 10 * 60 * 1000
-const GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS = 90 * 60 * 1000
-const GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS = 30 * 60 * 1000
+const REMOTE_RESULT_TOTAL_TIMEOUT_MS = 2 * 60 * 60 * 1000
+const REMOTE_RESULT_STALL_TIMEOUT_MS = 2 * 60 * 60 * 1000
+const GROUPED_REMOTE_RESULT_TOTAL_TIMEOUT_MS = 10 * 60 * 1000
+const GROUPED_REMOTE_RESULT_STALL_TIMEOUT_MS = 10 * 60 * 1000
 const GROUPED_REMOTE_RESULT_POLL_INTERVAL_MAX_MS = 10000
-const GROUPED_SUBTASK_AUTO_RETRY_COUNT = 1
+const GROUPED_SUBTASK_AUTO_RETRY_COUNT = 0
 const SERIES_GENERATE_IMAGE_TYPE_OPTIONS = ['商品主图', '详情图', '细节图', '尺寸图', '白底图', '颜色图']
 const SERIES_GENERATE_IMAGE_TYPE_CONFIG = {
   商品主图: {
@@ -308,7 +308,16 @@ function createResultCardFromSavedImage(savedImage = {}, { id, model, title, pro
   }
 }
 
-function createSeriesOutputFromSavedImage(savedImage = {}, { id, title, model, sourceTag, promptFinal = '' }) {
+function createSeriesOutputFromSavedImage(savedImage = {}, {
+  id,
+  title,
+  model,
+  sourceTag,
+  promptFinal = '',
+  startedAt = '',
+  completedAt = '',
+  elapsedMs = 0
+}) {
   return {
     id,
     title,
@@ -316,7 +325,10 @@ function createSeriesOutputFromSavedImage(savedImage = {}, { id, title, model, s
     preview: savedImage.previewUrl || '',
     savedPath: savedImage.savedPath || '',
     sourceTag,
-    promptFinal
+    promptFinal,
+    startedAt,
+    completedAt,
+    elapsedMs: Math.max(0, Number(elapsedMs) || 0)
   }
 }
 
@@ -326,7 +338,10 @@ function createSeriesEmptyOutput({
   model,
   promptFinal = '',
   assignmentId = '',
-  error
+  error,
+  startedAt = '',
+  completedAt = '',
+  elapsedMs = 0
 } = {}) {
   return {
     id,
@@ -338,7 +353,10 @@ function createSeriesEmptyOutput({
     promptFinal,
     assignmentId,
     status: '失败',
-    error: String(error || '').trim() || '图片任务执行失败'
+    error: String(error || '').trim() || '图片任务执行失败',
+    startedAt,
+    completedAt,
+    elapsedMs: Math.max(0, Number(elapsedMs) || 0)
   }
 }
 
@@ -586,22 +604,40 @@ function validateStudioImageTask({ menuKey, draft }) {
   }
 }
 
+function createSeriesPendingOutput({
+  id,
+  title,
+  model,
+  promptFinal = '',
+  assignmentId = '',
+  sourceTag = 'pending',
+  status = '等待中',
+  error = '',
+  startedAt = ''
+} = {}) {
+  return {
+    id,
+    title,
+    model,
+    preview: '',
+    savedPath: '',
+    sourceTag,
+    promptFinal,
+    assignmentId,
+    status,
+    error: String(error || '').trim(),
+    startedAt,
+    completedAt: '',
+    elapsedMs: 0
+  }
+}
+
 function resolveTaskRetryLimit(maxRetryCountOverride) {
   if (!Number.isFinite(Number(maxRetryCountOverride))) {
     return MAX_RETRY_COUNT
   }
 
   return Math.max(0, Math.floor(Number(maxRetryCountOverride)))
-}
-
-function resolveSeriesGroupConcurrency(settings = {}) {
-  const numericValue = Number(settings?.seriesGroupConcurrency)
-
-  if (![2, 3, 4].includes(numericValue)) {
-    return SERIES_GROUP_CONCURRENCY
-  }
-
-  return numericValue
 }
 
 function createStudioImageGenerationService({
@@ -848,9 +884,8 @@ function createStudioImageGenerationService({
     }
   }
 
-  async function generateSeriesDesignResults({ draft, taskId, outputDirectory, onProgress }) {
-    const settings = settingsService.getSettings()
-    const seriesGroupConcurrency = resolveSeriesGroupConcurrency(settings)
+  async function generateSeriesDesignResults({ draft, taskId, outputDirectory, onProgress, onIntermediateResult }) {
+    const seriesGroupConcurrency = SERIES_GROUP_CONCURRENCY
     const assignments = Array.isArray(draft.imageAssignments) ? draft.imageAssignments : []
     const selectedAssignments = buildSeriesDesignOutputDescriptors(assignments.filter((item) => item.selected !== false))
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
@@ -891,16 +926,86 @@ function createStudioImageGenerationService({
 
     const groupedResults = []
 
+    async function emitIntermediateGroupedResults() {
+      if (typeof onIntermediateResult !== 'function') {
+        return
+      }
+
+      await onIntermediateResult({
+        textResults: [],
+        comparisonResults: [],
+        groupedResults: groupedResults.slice(),
+        summary: {
+          title: `套图设计 ${batchCount} 组`,
+          description: `${draft.model} / 每组 ${assignments.length} 张`
+        }
+      })
+    }
+
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
       const generatedReplacementMap = new Map()
       let completedCount = 0
       let failedCount = 0
+      const pendingOutputMap = new Map()
+
+      const buildCurrentGroup = () => {
+        return {
+          id: `${taskId}-series-design-group-${batchIndex + 1}`,
+          groupIndex: batchIndex,
+          groupType: 'batch',
+          groupTitle: `第 ${batchIndex + 1} 组`,
+          promptSummary: draft.globalPrompt || '',
+          notes: `已替换 ${selectedAssignments.length} 张图片`,
+          status: failedCount > 0 ? (completedCount > 0 ? 'partial' : 'failed') : (
+            completedCount >= selectedAssignments.length ? 'succeeded' : 'running'
+          ),
+          completedCount,
+          failedCount,
+          outputs: assignments.map((assignment, index) => {
+            return generatedReplacementMap.get(assignment.id) ||
+              pendingOutputMap.get(assignment.id) || {
+                ...originalOutputs[index],
+                id: `${taskId}-series-design-batch-${batchIndex + 1}-original-${index + 1}`
+              }
+          })
+        }
+      }
+
+      selectedAssignments.forEach((assignment, selectedIndex) => {
+        const batchPrompt = resolveBatchPromptValue({
+          differentialEnabled: assignment.differentialEnabled,
+          batchPrompts: assignment.batchPrompts,
+          fallbackPrompt: assignment.composedPrompt,
+          batchIndex,
+          batchCount
+        })
+        const promptFinal = composeStructuredPrompt({
+          dedicatedPrompt: batchPrompt,
+          globalPrompt: draft.globalPrompt,
+          negativePrompt: draft.negativePrompt
+        })
+
+        const outputStartedAt = new Date(getNowMs()).toISOString()
+        pendingOutputMap.set(assignment.id, createSeriesPendingOutput({
+          id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}-pending`,
+          title: assignment.outputTitle,
+          model: assignment.model || draft.model,
+          promptFinal,
+          assignmentId: assignment.id,
+          startedAt: outputStartedAt
+        }))
+      })
+
+      groupedResults.push(buildCurrentGroup())
+      await emitIntermediateGroupedResults()
 
       const generatedItems = await runTasksWithConcurrency(
         selectedAssignments.map((assignment, selectedIndex) => {
           return async () => {
             const sourceFilePath = assignment.storedPath || assignment.path || ''
             const subtaskIndex = (batchIndex * selectedAssignments.length) + selectedIndex
+            const subtaskStartedAtMs = getNowMs()
+            const subtaskStartedAt = new Date(subtaskStartedAtMs).toISOString()
             const batchPrompt = resolveBatchPromptValue({
               differentialEnabled: assignment.differentialEnabled,
               batchPrompts: assignment.batchPrompts,
@@ -944,7 +1049,9 @@ function createStudioImageGenerationService({
                 }
 
                 completedCount += 1
-                return {
+                const subtaskCompletedAtMs = getNowMs()
+                const subtaskCompletedAt = new Date(subtaskCompletedAtMs).toISOString()
+                const output = {
                   assignmentId: assignment.id,
                   output: {
                     ...createSeriesOutputFromSavedImage(savedImage, {
@@ -952,11 +1059,20 @@ function createStudioImageGenerationService({
                       title: assignment.outputTitle,
                       model: assignment.model || draft.model,
                       sourceTag: 'generated',
-                      promptFinal
+                      promptFinal,
+                      startedAt: subtaskStartedAt,
+                      completedAt: subtaskCompletedAt,
+                      elapsedMs: subtaskCompletedAtMs - subtaskStartedAtMs
                     }),
-                    assignmentId: assignment.id
+                    assignmentId: assignment.id,
+                    status: '已完成'
                   }
                 }
+                generatedReplacementMap.set(assignment.id, output.output)
+                pendingOutputMap.delete(assignment.id)
+                groupedResults[groupedResults.length - 1] = buildCurrentGroup()
+                await emitIntermediateGroupedResults()
+                return output
               } catch (error) {
                 if (!shouldAutoRetryGroupedItemError(error)) {
                   throw error
@@ -968,7 +1084,9 @@ function createStudioImageGenerationService({
 
                 failedCount += 1
                 await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
-                return {
+                const subtaskCompletedAtMs = getNowMs()
+                const subtaskCompletedAt = new Date(subtaskCompletedAtMs).toISOString()
+                const output = {
                   assignmentId: assignment.id,
                   output: createSeriesEmptyOutput({
                     id: `${taskId}-series-design-${batchIndex + 1}-${selectedIndex + 1}-empty`,
@@ -976,9 +1094,17 @@ function createStudioImageGenerationService({
                     model: assignment.model || draft.model,
                     promptFinal,
                     assignmentId: assignment.id,
-                    error: error.message
+                    error: error.message,
+                    startedAt: subtaskStartedAt,
+                    completedAt: subtaskCompletedAt,
+                    elapsedMs: subtaskCompletedAtMs - subtaskStartedAtMs
                   })
                 }
+                generatedReplacementMap.set(assignment.id, output.output)
+                pendingOutputMap.delete(assignment.id)
+                groupedResults[groupedResults.length - 1] = buildCurrentGroup()
+                await emitIntermediateGroupedResults()
+                return output
               }
             }
           }
@@ -990,22 +1116,8 @@ function createStudioImageGenerationService({
         generatedReplacementMap.set(item.assignmentId, item.output)
       })
 
-      groupedResults.push({
-        id: `${taskId}-series-design-group-${batchIndex + 1}`,
-        groupType: 'batch',
-        groupTitle: `第 ${batchIndex + 1} 组`,
-        promptSummary: draft.globalPrompt || '',
-        notes: `已替换 ${selectedAssignments.length} 张图片`,
-        status: failedCount > 0 ? (completedCount > 0 ? 'partial' : 'failed') : 'succeeded',
-        completedCount,
-        failedCount,
-        outputs: assignments.map((assignment, index) => {
-          return generatedReplacementMap.get(assignment.id) || {
-            ...originalOutputs[index],
-            id: `${taskId}-series-design-batch-${batchIndex + 1}-original-${index + 1}`
-          }
-        })
-      })
+      groupedResults[groupedResults.length - 1] = buildCurrentGroup()
+      await emitIntermediateGroupedResults()
     }
 
     return {
@@ -1019,9 +1131,8 @@ function createStudioImageGenerationService({
     }
   }
 
-  async function generateSeriesGenerateResults({ draft, taskId, outputDirectory, onProgress }) {
-    const settings = settingsService.getSettings()
-    const seriesGroupConcurrency = resolveSeriesGroupConcurrency(settings)
+  async function generateSeriesGenerateResults({ draft, taskId, outputDirectory, onProgress, onIntermediateResult }) {
+    const seriesGroupConcurrency = SERIES_GROUP_CONCURRENCY
     const batchCount = Math.max(1, Number(draft.batchCount) || 1)
     const promptAssignments = normalizeSeriesGeneratePromptAssignments(draft.promptAssignments, draft.generateCount, batchCount)
     const outputDescriptors = buildSeriesGenerateOutputDescriptors(promptAssignments)
@@ -1045,13 +1156,68 @@ function createStudioImageGenerationService({
     const sourceFilePath = draft.sourceImage?.storedPath || draft.sourceImage?.path || ''
     const groupedResults = []
 
+    async function emitIntermediateGroupedResults() {
+      if (typeof onIntermediateResult !== 'function') {
+        return
+      }
+
+      await onIntermediateResult({
+        textResults: [],
+        comparisonResults: [],
+        groupedResults: groupedResults.slice(),
+        summary: {
+          title: `套图生成 ${batchCount} 组 x ${generateCount} 张`,
+          description: `${draft.model} / ${draft.sourceImage?.name || '参考图'}`
+        }
+      })
+    }
+
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
       let completedCount = 0
       let failedCount = 0
-      const outputs = await runTasksWithConcurrency(
+      const outputs = outputDescriptors.map((promptAssignment, outputIndex) => {
+        const batchPrompt = resolveBatchPromptValue({
+          differentialEnabled: promptAssignment.differentialEnabled,
+          batchPrompts: promptAssignment.batchPrompts,
+          fallbackPrompt: promptAssignment.composedPrompt,
+          batchIndex,
+          batchCount
+        })
+        const promptFinal = composeStructuredPrompt({
+          dedicatedPrompt: batchPrompt,
+          globalPrompt: draft.globalPrompt,
+          negativePrompt: draft.negativePrompt
+        })
+        const outputStartedAt = new Date(getNowMs()).toISOString()
+
+        return createSeriesPendingOutput({
+          id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}-pending`,
+          title: promptAssignment.outputTitle,
+          model: draft.model,
+          promptFinal,
+          assignmentId: promptAssignment.id,
+          startedAt: outputStartedAt
+        })
+      })
+      groupedResults.push({
+        id: `${taskId}-series-generate-group-${batchIndex + 1}`,
+        groupIndex: batchIndex,
+        groupType: 'batch',
+        groupTitle: `第 ${batchIndex + 1} 组`,
+        promptSummary: draft.globalPrompt || '',
+        notes: '',
+        status: 'running',
+        completedCount,
+        failedCount,
+        outputs
+      })
+      await emitIntermediateGroupedResults()
+      const resolvedOutputs = await runTasksWithConcurrency(
         outputDescriptors.map((promptAssignment, outputIndex) => {
           return async () => {
             const subtaskIndex = (batchIndex * generateCount) + outputIndex
+            const subtaskStartedAtMs = getNowMs()
+            const subtaskStartedAt = new Date(subtaskStartedAtMs).toISOString()
             const batchPrompt = resolveBatchPromptValue({
               differentialEnabled: promptAssignment.differentialEnabled,
               batchPrompts: promptAssignment.batchPrompts,
@@ -1095,16 +1261,32 @@ function createStudioImageGenerationService({
                 }
 
                 completedCount += 1
-                return {
+                const subtaskCompletedAtMs = getNowMs()
+                const subtaskCompletedAt = new Date(subtaskCompletedAtMs).toISOString()
+                const output = {
                   ...createSeriesOutputFromSavedImage(savedImage, {
                     id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}`,
                     title: promptAssignment.outputTitle,
                     model: draft.model,
                     sourceTag: 'generated',
-                    promptFinal
+                    promptFinal,
+                    startedAt: subtaskStartedAt,
+                    completedAt: subtaskCompletedAt,
+                    elapsedMs: subtaskCompletedAtMs - subtaskStartedAtMs
                   }),
-                  assignmentId: promptAssignment.id
+                  assignmentId: promptAssignment.id,
+                  status: '已完成'
                 }
+                outputs[outputIndex] = output
+                groupedResults[groupedResults.length - 1] = {
+                  ...groupedResults[groupedResults.length - 1],
+                  status: failedCount > 0 ? 'partial' : (completedCount >= generateCount ? 'succeeded' : 'running'),
+                  completedCount,
+                  failedCount,
+                  outputs: outputs.slice()
+                }
+                await emitIntermediateGroupedResults()
+                return output
               } catch (error) {
                 if (!shouldAutoRetryGroupedItemError(error)) {
                   throw error
@@ -1116,14 +1298,29 @@ function createStudioImageGenerationService({
 
                 failedCount += 1
                 await progressReporter.reportSubtaskProgress(subtaskIndex, 100, 'failed')
-                return createSeriesEmptyOutput({
+                const subtaskCompletedAtMs = getNowMs()
+                const subtaskCompletedAt = new Date(subtaskCompletedAtMs).toISOString()
+                const output = createSeriesEmptyOutput({
                   id: `${taskId}-series-generate-${batchIndex + 1}-${outputIndex + 1}-empty`,
                   title: promptAssignment.outputTitle,
                   model: draft.model,
                   promptFinal,
                   assignmentId: promptAssignment.id,
-                  error: error.message
+                  error: error.message,
+                  startedAt: subtaskStartedAt,
+                  completedAt: subtaskCompletedAt,
+                  elapsedMs: subtaskCompletedAtMs - subtaskStartedAtMs
                 })
+                outputs[outputIndex] = output
+                groupedResults[groupedResults.length - 1] = {
+                  ...groupedResults[groupedResults.length - 1],
+                  status: completedCount > 0 ? 'partial' : 'failed',
+                  completedCount,
+                  failedCount,
+                  outputs: outputs.slice()
+                }
+                await emitIntermediateGroupedResults()
+                return output
               }
             }
           }
@@ -1131,8 +1328,9 @@ function createStudioImageGenerationService({
         seriesGroupConcurrency
       )
 
-      groupedResults.push({
+      groupedResults[groupedResults.length - 1] = {
         id: `${taskId}-series-generate-group-${batchIndex + 1}`,
+        groupIndex: batchIndex,
         groupType: 'batch',
         groupTitle: `第 ${batchIndex + 1} 组`,
         promptSummary: draft.globalPrompt || '',
@@ -1140,8 +1338,9 @@ function createStudioImageGenerationService({
         status: failedCount > 0 ? (completedCount > 0 ? 'partial' : 'failed') : 'succeeded',
         completedCount,
         failedCount,
-        outputs
-      })
+        outputs: resolvedOutputs.length ? outputs : outputs
+      }
+      await emitIntermediateGroupedResults()
     }
 
     return {
@@ -1155,7 +1354,7 @@ function createStudioImageGenerationService({
     }
   }
 
-  async function generateImageResults({ menuKey, draft, taskId, outputDirectory, onProgress }) {
+  async function generateImageResults({ menuKey, draft, taskId, outputDirectory, onProgress, onIntermediateResult }) {
     validateStudioImageTask({
       menuKey,
       draft
@@ -1166,7 +1365,8 @@ function createStudioImageGenerationService({
         draft,
         taskId,
         outputDirectory,
-        onProgress
+        onProgress,
+        onIntermediateResult
       })
     }
 
@@ -1175,7 +1375,8 @@ function createStudioImageGenerationService({
         draft,
         taskId,
         outputDirectory,
-        onProgress
+        onProgress,
+        onIntermediateResult
       })
     }
 
@@ -1184,7 +1385,8 @@ function createStudioImageGenerationService({
         draft,
         taskId,
         outputDirectory,
-        onProgress
+        onProgress,
+        onIntermediateResult
       })
     }
 
@@ -1193,7 +1395,8 @@ function createStudioImageGenerationService({
         draft,
         taskId,
         outputDirectory,
-        onProgress
+        onProgress,
+        onIntermediateResult
       })
     }
 

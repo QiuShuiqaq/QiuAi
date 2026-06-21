@@ -1,5 +1,9 @@
 const EMPTY_IMAGE_TYPE_TEMPLATE_ID = 'system-empty-image-type'
 
+function normalizePromptText(value = '') {
+  return String(value || '')
+}
+
 function resolveImageTypeFromTemplate(template = null) {
   if (!template) {
     return ''
@@ -12,9 +16,35 @@ function resolveImageTypeFromTemplate(template = null) {
   return template.name || ''
 }
 
-function resolveNextBatchPrompts(item = {}, templatePrompt = '') {
+export function resolveTemplatePromptValue({
+  currentPrompt = '',
+  previousTemplatePrompt = '',
+  nextTemplatePrompt = ''
+} = {}) {
+  const normalizedCurrentPrompt = normalizePromptText(currentPrompt)
+  const normalizedPreviousTemplatePrompt = normalizePromptText(previousTemplatePrompt)
+  const normalizedNextTemplatePrompt = normalizePromptText(nextTemplatePrompt)
+
+  if (!normalizedCurrentPrompt.trim()) {
+    return normalizedNextTemplatePrompt
+  }
+
+  if (normalizedCurrentPrompt === normalizedPreviousTemplatePrompt) {
+    return normalizedNextTemplatePrompt
+  }
+
+  return normalizedCurrentPrompt
+}
+
+function resolveNextBatchPrompts(item = {}, previousTemplatePrompt = '', nextTemplatePrompt = '') {
   if (item.differentialEnabled === true && Array.isArray(item.batchPrompts)) {
-    return item.batchPrompts.map(() => templatePrompt)
+    return item.batchPrompts.map((batchPrompt) => {
+      return resolveTemplatePromptValue({
+        currentPrompt: batchPrompt,
+        previousTemplatePrompt,
+        nextTemplatePrompt
+      })
+    })
   }
 
   return item.batchPrompts
@@ -23,29 +53,41 @@ function resolveNextBatchPrompts(item = {}, templatePrompt = '') {
 export function applyTemplateSelectionToAssignment({
   assignments = [],
   index = -1,
-  template = null
+  template = null,
+  currentTemplate = null
 } = {}) {
   return (Array.isArray(assignments) ? assignments : []).map((item, currentIndex) => {
     if (currentIndex !== index) {
       return item
     }
 
+    const previousTemplatePrompt = currentTemplate?.prompt || ''
+    const nextTemplatePrompt = template?.prompt || ''
+
     if (!template) {
       return {
         ...item,
         templateId: '',
-        imageType: ''
+        imageType: '',
+        prompt: resolveTemplatePromptValue({
+          currentPrompt: item.prompt,
+          previousTemplatePrompt,
+          nextTemplatePrompt: ''
+        }),
+        batchPrompts: resolveNextBatchPrompts(item, previousTemplatePrompt, '')
       }
     }
-
-    const templatePrompt = template.prompt || ''
 
     return {
       ...item,
       templateId: template.id || '',
       imageType: resolveImageTypeFromTemplate(template),
-      prompt: templatePrompt,
-      batchPrompts: resolveNextBatchPrompts(item, templatePrompt)
+      prompt: resolveTemplatePromptValue({
+        currentPrompt: item.prompt,
+        previousTemplatePrompt,
+        nextTemplatePrompt
+      }),
+      batchPrompts: resolveNextBatchPrompts(item, previousTemplatePrompt, nextTemplatePrompt)
     }
   })
 }
@@ -53,29 +95,41 @@ export function applyTemplateSelectionToAssignment({
 export function applyTemplateSelectionToPromptAssignment({
   assignments = [],
   index = -1,
-  template = null
+  template = null,
+  currentTemplate = null
 } = {}) {
   return (Array.isArray(assignments) ? assignments : []).map((item, currentIndex) => {
     if (currentIndex !== index) {
       return item
     }
 
+    const previousTemplatePrompt = currentTemplate?.prompt || ''
+    const nextTemplatePrompt = template?.prompt || ''
+
     if (!template) {
       return {
         ...item,
         templateId: '',
-        imageType: ''
+        imageType: '',
+        prompt: resolveTemplatePromptValue({
+          currentPrompt: item.prompt,
+          previousTemplatePrompt,
+          nextTemplatePrompt: ''
+        }),
+        batchPrompts: resolveNextBatchPrompts(item, previousTemplatePrompt, '')
       }
     }
-
-    const templatePrompt = template.prompt || ''
 
     return {
       ...item,
       templateId: template.id || '',
       imageType: resolveImageTypeFromTemplate(template),
-      prompt: templatePrompt,
-      batchPrompts: resolveNextBatchPrompts(item, templatePrompt)
+      prompt: resolveTemplatePromptValue({
+        currentPrompt: item.prompt,
+        previousTemplatePrompt,
+        nextTemplatePrompt
+      }),
+      batchPrompts: resolveNextBatchPrompts(item, previousTemplatePrompt, nextTemplatePrompt)
     }
   })
 }

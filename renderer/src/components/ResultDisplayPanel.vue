@@ -47,16 +47,12 @@ const taskStatusClassMap = {
   进行中: 'task-status--running',
   待确认: 'task-status--running',
   已完成: 'task-status--completed',
-  失败: 'task-status--failed'
+  失败: 'task-status--failed',
+  部分完成: 'task-status--running'
 }
 
 const showLatestTaskProgress = computed(() => {
   return !showModelPricing.value && Boolean(props.latestTask)
-})
-
-const groupElapsedLabel = computed(() => {
-  const elapsedLabel = props.resultPayload.summary?.elapsedLabel || ''
-  return elapsedLabel.replace(/^生成耗时\s*/, '')
 })
 
 const latestTaskProgressWidth = computed(() => {
@@ -131,7 +127,7 @@ const slowTaskHint = computed(() => {
 const selectedPreview = ref(null)
 
 function openPreview(item) {
-  if (!item?.preview || item.sourceTag === 'empty') {
+  if (!item?.preview || item.sourceTag === 'empty' || item.sourceTag === 'pending') {
     return
   }
 
@@ -150,8 +146,26 @@ function resolvePromptFinal(value) {
   return String(value || '').trim()
 }
 
-// 模型价格展示示例保留：
-// gpt-image-2
+function resolveOutputElapsedLabel(output = {}) {
+  const elapsedMs = Math.max(0, Number(output?.elapsedMs) || 0)
+  if (elapsedMs <= 0) {
+    return ''
+  }
+
+  return `耗时 ${(elapsedMs / 1000).toFixed(1)} 秒`
+}
+
+function resolveOutputPlaceholderLabel(output = {}) {
+  if (output.sourceTag === 'empty' || output.status === '失败') {
+    return '生成失败'
+  }
+
+  if (output.status === '生成较慢') {
+    return '生成较慢'
+  }
+
+  return '等待生成'
+}
 </script>
 
 <template>
@@ -261,7 +275,6 @@ function resolvePromptFinal(value) {
         <article v-for="group in resultPayload.groupedResults" :key="group.id" class="result-group-card">
           <div class="result-group-card__header">
             <strong>{{ group.groupTitle }}</strong>
-            <span v-if="groupElapsedLabel" class="result-group-card__elapsed">生成耗时 {{ groupElapsedLabel }}</span>
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
@@ -269,8 +282,9 @@ function resolvePromptFinal(value) {
                 <img :src="output.preview" :alt="output.title" />
               </button>
               <div v-else class="image-result-card__preview image-result-card__preview--empty">
-                <span>生成失败</span>
+                <span>{{ resolveOutputPlaceholderLabel(output) }}</span>
               </div>
+              <span v-if="resolveOutputElapsedLabel(output)" class="image-result-card__elapsed">{{ resolveOutputElapsedLabel(output) }}</span>
               <strong>{{ output.model }}</strong>
               <span v-if="output.error" class="task-card__error">{{ output.error }}</span>
               <label v-if="resolvePromptFinal(output.promptFinal)" class="form-field image-result-card__prompt">
@@ -287,7 +301,6 @@ function resolvePromptFinal(value) {
         <article v-for="group in resultPayload.groupedResults" :key="group.id" class="result-group-card">
           <div class="result-group-card__header">
             <strong>{{ group.groupTitle }}</strong>
-            <span v-if="groupElapsedLabel" class="result-group-card__elapsed">生成耗时 {{ groupElapsedLabel }}</span>
           </div>
           <div class="group-output-grid group-output-grid--scroll group-output-grid--visible-scroll">
             <article v-for="output in group.outputs" :key="output.id" class="image-result-card">
@@ -295,8 +308,9 @@ function resolvePromptFinal(value) {
                 <img :src="output.preview" :alt="output.title" />
               </button>
               <div v-else class="image-result-card__preview image-result-card__preview--empty">
-                <span>生成失败</span>
+                <span>{{ resolveOutputPlaceholderLabel(output) }}</span>
               </div>
+              <span v-if="resolveOutputElapsedLabel(output)" class="image-result-card__elapsed">{{ resolveOutputElapsedLabel(output) }}</span>
               <strong>{{ output.model }}</strong>
               <span v-if="output.error" class="task-card__error">{{ output.error }}</span>
               <label v-if="resolvePromptFinal(output.promptFinal)" class="form-field image-result-card__prompt">
